@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/reminder.dart';
+import '../services/baidu_geocoding_service.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/radius_selector.dart';
 
@@ -14,14 +15,20 @@ class ReminderEditorScreen extends StatefulWidget {
 }
 
 class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
+  final BaiduGeocodingService _geocodingService = const BaiduGeocodingService();
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _locationController;
   late int _radiusMeters;
   late bool _isEnabled;
   late bool _allDay;
+  late TimeOfDay _startTime;
+  late TimeOfDay _endTime;
   late TriggerLimit _triggerLimit;
+  late double _latitude;
+  late double _longitude;
   bool _hasPin = true;
+  bool _isSearchingLocation = false;
 
   bool get _isEditing => widget.reminder != null;
 
@@ -35,8 +42,12 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
     );
     _radiusMeters = reminder?.radiusMeters ?? 200;
     _isEnabled = reminder?.isEnabled ?? true;
-    _allDay =
-        reminder?.scheduleLabel == null || reminder!.scheduleLabel == '全天生效';
+    _latitude = reminder?.latitude ?? 31.2304;
+    _longitude = reminder?.longitude ?? 121.4737;
+    final scheduleRange = _parseScheduleRange(reminder?.scheduleLabel);
+    _allDay = reminder == null || reminder.scheduleLabel == '全天生效';
+    _startTime = scheduleRange?.start ?? const TimeOfDay(hour: 18, minute: 0);
+    _endTime = scheduleRange?.end ?? const TimeOfDay(hour: 21, minute: 0);
     _triggerLimit = reminder?.triggerLimit ?? TriggerLimit.always;
   }
 
@@ -65,16 +76,126 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
         id: old?.id ?? now.microsecondsSinceEpoch,
         title: _titleController.text.trim(),
         locationName: _locationController.text.trim(),
-        latitude: old?.latitude ?? 31.2304,
-        longitude: old?.longitude ?? 121.4737,
+        latitude: _latitude,
+        longitude: _longitude,
         radiusMeters: _radiusMeters,
         isEnabled: _isEnabled,
         triggerLimit: _triggerLimit,
-        scheduleLabel: _allDay ? '全天生效' : '18:00-21:00',
+        scheduleLabel: _allDay
+            ? '全天生效'
+            : '${_formatTime(_startTime)}-${_formatTime(_endTime)}',
         createdAt: old?.createdAt ?? now,
         lastTriggeredLabel: old?.lastTriggeredLabel,
       ),
     );
+  }
+
+  Future<void> _searchLocationByName() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final query = _locationController.text.trim();
+    if (query.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('请先输入地点名称')));
+      return;
+    }
+
+    setState(() => _isSearchingLocation = true);
+    try {
+      final result = await _geocodingService.searchAddress(query);
+      if (!mounted) {
+        return;
+      }
+
+      if (result == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('没有找到这个地点，请补充城市或更具体的地址')),
+        );
+        return;
+      }
+
+      setState(() {
+        _latitude = result.latitude;
+        _longitude = result.longitude;
+        _hasPin = true;
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('已定位到输入地点'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSearchingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _pickTime({required bool isStart}) async {
+    final initialTime = isStart ? _startTime : _endTime;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+    );
+
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      if (isStart) {
+        _startTime = picked;
+      } else {
+        _endTime = picked;
+      }
+    });
+  }
+
+  ({TimeOfDay start, TimeOfDay end})? _parseScheduleRange(String? label) {
+    if (label == null) {
+      return null;
+    }
+
+    final match = RegExp(
+      r'(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})',
+    ).firstMatch(label);
+    if (match == null) {
+      return null;
+    }
+
+    final startHour = int.tryParse(match.group(1)!);
+    final startMinute = int.tryParse(match.group(2)!);
+    final endHour = int.tryParse(match.group(3)!);
+    final endMinute = int.tryParse(match.group(4)!);
+    if (!_isValidTime(startHour, startMinute) ||
+        !_isValidTime(endHour, endMinute)) {
+      return null;
+    }
+
+    return (
+      start: TimeOfDay(hour: startHour!, minute: startMinute!),
+      end: TimeOfDay(hour: endHour!, minute: endMinute!),
+    );
+  }
+
+  bool _isValidTime(int? hour, int? minute) {
+    return hour != null &&
+        minute != null &&
+        hour >= 0 &&
+        hour <= 23 &&
+        minute >= 0 &&
+        minute <= 59;
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   @override
@@ -99,7 +220,15 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
             MapPicker(
               radiusMeters: _radiusMeters,
               hasPin: _hasPin,
+              latitude: _latitude,
+              longitude: _longitude,
               onPinChanged: (value) => setState(() => _hasPin = value),
+              onLocationChanged: (latitude, longitude) {
+                setState(() {
+                  _latitude = latitude;
+                  _longitude = longitude;
+                });
+              },
             ),
             const SizedBox(height: 18),
             TextFormField(
@@ -120,10 +249,25 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
             const SizedBox(height: 10),
             TextFormField(
               controller: _locationController,
-              decoration: const InputDecoration(
+              textInputAction: TextInputAction.search,
+              onFieldSubmitted: (_) => _searchLocationByName(),
+              decoration: InputDecoration(
                 labelText: '地点名称',
                 hintText: '例如：康宁大药房',
-                prefixIcon: Icon(Icons.place_outlined),
+                prefixIcon: const Icon(Icons.place_outlined),
+                suffixIcon: IconButton(
+                  tooltip: '搜索地点',
+                  onPressed: _isSearchingLocation
+                      ? null
+                      : _searchLocationByName,
+                  icon: _isSearchingLocation
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.search),
+                ),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -151,10 +295,23 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('全天生效'),
-                  subtitle: Text(_allDay ? '全天都可以触发' : '仅 18:00-21:00 生效'),
+                  subtitle: Text(
+                    _allDay
+                        ? '全天都可以触发'
+                        : '仅 ${_formatTime(_startTime)}-${_formatTime(_endTime)} 生效',
+                  ),
                   value: _allDay,
                   onChanged: (value) => setState(() => _allDay = value),
                 ),
+                if (!_allDay) ...[
+                  const Divider(height: 1),
+                  _TimeRangePicker(
+                    startLabel: _formatTime(_startTime),
+                    endLabel: _formatTime(_endTime),
+                    onStartTap: () => _pickTime(isStart: true),
+                    onEndTap: () => _pickTime(isStart: false),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 18),
@@ -185,6 +342,87 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TimeRangePicker extends StatelessWidget {
+  const _TimeRangePicker({
+    required this.startLabel,
+    required this.endLabel,
+    required this.onStartTap,
+    required this.onEndTap,
+  });
+
+  final String startLabel;
+  final String endLabel;
+  final VoidCallback onStartTap;
+  final VoidCallback onEndTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: _TimeButton(
+              label: '开始时间',
+              value: startLabel,
+              onTap: onStartTap,
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            child: Icon(Icons.arrow_forward, size: 18),
+          ),
+          Expanded(
+            child: _TimeButton(label: '结束时间', value: endLabel, onTap: onEndTap),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimeButton extends StatelessWidget {
+  const _TimeButton({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756C)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ],
       ),
     );
   }

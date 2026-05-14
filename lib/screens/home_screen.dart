@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/geofence_service.dart';
 import '../models/reminder.dart';
+import '../services/reminder_store.dart';
 import '../widgets/permission_banner.dart';
 import '../widgets/reminder_card.dart';
 import 'reminder_editor_screen.dart';
@@ -16,15 +18,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final AppGeofenceService _geofenceService = const AppGeofenceService();
+  final ReminderStore _store = const ReminderStore();
   final TextEditingController _searchController = TextEditingController();
-  late List<Reminder> _reminders;
+  List<Reminder> _reminders = const [];
   String _query = '';
   _ReminderFilter _filter = _ReminderFilter.all;
+  int _selectedIndex = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _reminders = Reminder.demoList();
+    _loadReminders();
     _searchController.addListener(() {
       setState(() => _query = _searchController.text.trim());
     });
@@ -34,6 +40,26 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadReminders() async {
+    final reminders = await _store.loadReminders();
+    await _geofenceService.syncReminders(reminders);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _reminders = reminders;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveReminders() {
+    return Future.wait([
+      _store.saveReminders(_reminders),
+      _geofenceService.syncReminders(_reminders),
+    ]).then((_) {});
   }
 
   List<Reminder> get _visibleReminders {
@@ -76,30 +102,50 @@ class _HomeScreenState extends State<HomeScreen> {
         _reminders[index] = result;
       }
     });
+    await _saveReminders();
   }
 
-  void _deleteReminder(Reminder reminder) {
+  Future<void> _deleteReminder(Reminder reminder) async {
+    final messenger = ScaffoldMessenger.of(context);
+
     setState(() {
       _reminders.removeWhere((item) => item.id == reminder.id);
     });
+    await _saveReminders();
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         content: Text('已删除「${reminder.locationName}」'),
         action: SnackBarAction(
           label: '撤销',
-          onPressed: () =>
-              setState(() => _reminders = [reminder, ..._reminders]),
+          onPressed: () {
+            setState(() => _reminders = [reminder, ..._reminders]);
+            _saveReminders();
+          },
         ),
       ),
     );
   }
 
-  void _toggleReminder(Reminder reminder, bool enabled) {
+  Future<void> _toggleReminder(Reminder reminder, bool enabled) async {
+    final messenger = ScaffoldMessenger.of(context);
+
     setState(() {
       final index = _reminders.indexWhere((item) => item.id == reminder.id);
       _reminders[index] = reminder.copyWith(isEnabled: enabled);
     });
+    await _saveReminders();
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          enabled
+              ? '已启用「${reminder.locationName}」'
+              : '已暂停「${reminder.locationName}」',
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   @override
@@ -108,114 +154,133 @@ class _HomeScreenState extends State<HomeScreen> {
     final pausedCount = _reminders.length - activeCount;
 
     return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _HomeHeader(
-                      onAdd: () => _openEditor(),
-                      onSettings: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const SettingsScreen(),
+      body: _selectedIndex == 0
+          ? _isLoading
+                ? const SafeArea(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : SafeArea(
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _HomeHeader(
+                                  onAdd: () => _openEditor(),
+                                  onSettings: () =>
+                                      setState(() => _selectedIndex = 1),
+                                ),
+                                const SizedBox(height: 18),
+                                TextField(
+                                  controller: _searchController,
+                                  textInputAction: TextInputAction.search,
+                                  decoration: const InputDecoration(
+                                    hintText: '搜索地点或提醒内容',
+                                    prefixIcon: Icon(Icons.search),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                PermissionBanner(
+                                  onOpenSettings: () =>
+                                      setState(() => _selectedIndex = 1),
+                                ),
+                                const SizedBox(height: 14),
+                                _StatusStrip(
+                                  activeCount: activeCount,
+                                  pausedCount: pausedCount,
+                                  totalCount: _reminders.length,
+                                ),
+                                const SizedBox(height: 14),
+                                _FilterBar(
+                                  value: _filter,
+                                  onChanged: (value) =>
+                                      setState(() => _filter = value),
+                                ),
+                              ],
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    TextField(
-                      controller: _searchController,
-                      textInputAction: TextInputAction.search,
-                      decoration: const InputDecoration(
-                        hintText: '搜索地点或提醒内容',
-                        prefixIcon: Icon(Icons.search),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    PermissionBanner(
-                      onOpenSettings: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const SettingsScreen(),
+                        ),
+                        if (_visibleReminders.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _EmptyState(
+                              hasQuery:
+                                  _query.isNotEmpty ||
+                                  _filter != _ReminderFilter.all,
+                              onAdd: () => _openEditor(),
+                              onClear: () {
+                                _searchController.clear();
+                                setState(() => _filter = _ReminderFilter.all);
+                              },
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
+                            sliver: SliverList.separated(
+                              itemCount: _visibleReminders.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final reminder = _visibleReminders[index];
+                                return Dismissible(
+                                  key: ValueKey(reminder.id),
+                                  direction: DismissDirection.endToStart,
+                                  background: const SizedBox.shrink(),
+                                  secondaryBackground: Container(
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.only(right: 20),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFB9493C),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  onDismissed: (_) => _deleteReminder(reminder),
+                                  child: ReminderCard(
+                                    reminder: reminder,
+                                    onTap: () => _openEditor(reminder),
+                                    onToggle: (enabled) =>
+                                        _toggleReminder(reminder, enabled),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                        );
-                      },
+                      ],
                     ),
-                    const SizedBox(height: 14),
-                    _StatusStrip(
-                      activeCount: activeCount,
-                      pausedCount: pausedCount,
-                      totalCount: _reminders.length,
-                    ),
-                    const SizedBox(height: 14),
-                    _FilterBar(
-                      value: _filter,
-                      onChanged: (value) => setState(() => _filter = value),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_visibleReminders.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _EmptyState(
-                  hasQuery: _query.isNotEmpty || _filter != _ReminderFilter.all,
-                  onAdd: () => _openEditor(),
-                  onClear: () {
-                    _searchController.clear();
-                    setState(() => _filter = _ReminderFilter.all);
-                  },
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
-                sliver: SliverList.separated(
-                  itemCount: _visibleReminders.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final reminder = _visibleReminders[index];
-                    return Dismissible(
-                      key: ValueKey(reminder.id),
-                      direction: DismissDirection.endToStart,
-                      background: const SizedBox.shrink(),
-                      secondaryBackground: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFB9493C),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.white,
-                        ),
-                      ),
-                      onDismissed: (_) => _deleteReminder(reminder),
-                      child: ReminderCard(
-                        reminder: reminder,
-                        onTap: () => _openEditor(reminder),
-                        onToggle: (enabled) =>
-                            _toggleReminder(reminder, enabled),
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
+                  )
+          : const SettingsScreen(),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) =>
+            setState(() => _selectedIndex = index),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note),
+            label: '事件',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: '设置',
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openEditor(),
-        icon: const Icon(Icons.add_location_alt_outlined),
-        label: const Text('新增提醒'),
-      ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: () => _openEditor(),
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('新增提醒'),
+            )
+          : null,
     );
   }
 }
@@ -326,8 +391,8 @@ class _StatusTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 82),
-      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -337,11 +402,11 @@ class _StatusTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: Theme.of(context).colorScheme.primary, size: 20),
-          const SizedBox(height: 8),
+          Icon(icon, color: Theme.of(context).colorScheme.primary, size: 18),
+          const SizedBox(height: 4),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
               height: 1,
             ),

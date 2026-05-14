@@ -39,6 +39,62 @@ class Reminder {
     return triggerLimit == TriggerLimit.always ? '每次进入' : '每天一次';
   }
 
+  factory Reminder.fromJson(Map<String, dynamic> json) {
+    int readInt(String key, int fallback) {
+      final value = json[key];
+      if (value is int) {
+        return value;
+      }
+      return int.tryParse('$value') ?? fallback;
+    }
+
+    double readDouble(String key, double fallback) {
+      final value = json[key];
+      if (value is num) {
+        return value.toDouble();
+      }
+      return double.tryParse('$value') ?? fallback;
+    }
+
+    final triggerLimitName = json['triggerLimit'] as String?;
+    final triggerLimit = TriggerLimit.values.firstWhere(
+      (item) => item.name == triggerLimitName,
+      orElse: () => TriggerLimit.always,
+    );
+
+    return Reminder(
+      id: readInt('id', DateTime.now().microsecondsSinceEpoch),
+      title: json['title'] as String? ?? '',
+      locationName: json['locationName'] as String? ?? '未命名地点',
+      latitude: readDouble('latitude', 31.2304),
+      longitude: readDouble('longitude', 121.4737),
+      radiusMeters: readInt('radiusMeters', 200),
+      isEnabled: json['isEnabled'] as bool? ?? true,
+      triggerLimit: triggerLimit,
+      scheduleLabel: json['scheduleLabel'] as String? ?? '全天生效',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      lastTriggeredLabel: json['lastTriggeredLabel'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'locationName': locationName,
+      'latitude': latitude,
+      'longitude': longitude,
+      'radiusMeters': radiusMeters,
+      'isEnabled': isEnabled,
+      'triggerLimit': triggerLimit.name,
+      'scheduleLabel': scheduleLabel,
+      'createdAt': createdAt.toIso8601String(),
+      'lastTriggeredLabel': lastTriggeredLabel,
+    };
+  }
+
   Reminder copyWith({
     int? id,
     String? title,

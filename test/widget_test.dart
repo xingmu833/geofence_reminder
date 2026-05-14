@@ -1,30 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geofence_reminder/main.dart';
+import 'package:geofence_reminder/widgets/map_picker.dart';
+import 'package:geofence_reminder/widgets/radius_selector.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('renders reminder home page and opens editor', (tester) async {
-    await tester.pumpWidget(const GeofenceReminderApp());
+    SharedPreferences.setMockInitialValues({});
 
-    expect(find.text('临场记'), findsOneWidget);
-    expect(find.text('康宁大药房'), findsOneWidget);
-    expect(find.text('新增提醒'), findsWidgets);
+    await tester.pumpWidget(const GeofenceReminderApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byIcon(Icons.add_location_alt_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.search), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.add).first);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('新增提醒'), findsOneWidget);
+    expect(find.byType(MapPicker), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('围栏半径'),
+      find.byType(RadiusSelector),
       240,
       scrollable: find.byType(Scrollable).last,
     );
-    expect(find.text('围栏半径'), findsOneWidget);
+    expect(find.byType(RadiusSelector), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('创建提醒'),
+      find.byIcon(Icons.save_outlined),
       240,
       scrollable: find.byType(Scrollable).last,
     );
-    expect(find.text('创建提醒'), findsOneWidget);
+    expect(find.byIcon(Icons.save_outlined), findsOneWidget);
   });
 }
