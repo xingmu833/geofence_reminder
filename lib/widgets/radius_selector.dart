@@ -39,7 +39,12 @@ class RadiusSelector extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             return ToggleButtons(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
+              borderColor: const Color(0xFFD8E3F8),
+              selectedBorderColor: Theme.of(context).colorScheme.primary,
+              fillColor: const Color(0xFFEAF1FF),
+              selectedColor: Theme.of(context).colorScheme.primary,
+              color: const Color(0xFF52627F),
               constraints: BoxConstraints.expand(
                 width: (constraints.maxWidth - 6) / 4,
                 height: 44,

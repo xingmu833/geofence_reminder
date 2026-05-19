@@ -1,5 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'app_settings_store.dart';
+
 class NotificationService {
   NotificationService._();
 
@@ -33,22 +35,27 @@ class NotificationService {
     required String body,
   }) async {
     await initialize();
+    final settings = await (const AppSettingsStore()).load();
+    final channelId = settings.vibrationEnabled
+        ? 'geofence_reminders_vibration'
+        : 'geofence_reminders_silent';
 
-    const androidDetails = AndroidNotificationDetails(
-      'geofence_reminders',
+    final androidDetails = AndroidNotificationDetails(
+      channelId,
       '位置提醒',
       channelDescription: '到达提醒地点时弹出的本地通知',
       importance: Importance.high,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
       ticker: '位置提醒',
+      enableVibration: settings.vibrationEnabled,
     );
 
     await _plugin.show(
       id,
       title,
       body,
-      const NotificationDetails(android: androidDetails),
+      NotificationDetails(android: androidDetails),
     );
   }
 }

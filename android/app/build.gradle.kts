@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -16,6 +17,20 @@ val localProperties =
             }
         }
     }
+
+fun dartDefineValue(name: String): String? {
+    val encodedDefines = project.findProperty("dart-defines") as? String
+    return encodedDefines
+        ?.split(",")
+        ?.mapNotNull { encoded ->
+            runCatching {
+                String(Base64.getDecoder().decode(encoded), Charsets.UTF_8)
+            }.getOrNull()
+        }
+        ?.firstOrNull { it.startsWith("$name=") }
+        ?.substringAfter("=")
+        ?.takeIf { it.isNotBlank() }
+}
 
 val backgroundGeolocation = project(":flutter_background_geolocation")
 apply(from = "${backgroundGeolocation.projectDir}/background_geolocation.gradle")
@@ -46,7 +61,8 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["BAIDU_API_KEY"] =
-            localProperties.getProperty("baidu.apiKey", "")
+            dartDefineValue("BAIDU_ANDROID_KEY")
+                ?: localProperties.getProperty("baidu.apiKey", "")
     }
 
     buildTypes {

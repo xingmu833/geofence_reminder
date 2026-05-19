@@ -41,4 +41,16 @@ class ReminderStore {
     );
     await prefs.setString(_storageKey, raw);
   }
+
+  Future<String> exportJson() async {
+    final reminders = await loadReminders();
+    return const JsonEncoder.withIndent(
+      '  ',
+    ).convert(reminders.map((reminder) => reminder.toJson()).toList());
+  }
+
+  Future<void> clearReminders() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_storageKey, jsonEncode([]));
+  }
 }

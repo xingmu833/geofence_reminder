@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../services/app_settings_store.dart';
+import '../services/geofence_service.dart';
 import '../services/permission_service.dart';
+import '../services/reminder_store.dart';
+import '../widgets/app_feedback_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -11,21 +16,29 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final AppPermissionService _permissionService = const AppPermissionService();
-  AppPermissionSnapshot? _snapshot;
+  final AppSettingsStore _settingsStore = const AppSettingsStore();
+  final ReminderStore _reminderStore = const ReminderStore();
+  final AppGeofenceService _geofenceService = const AppGeofenceService();
+  AppPermissionSnapshot? _permissionSnapshot;
+  AppSettingsSnapshot? _settings;
   bool _isBusy = false;
 
   @override
   void initState() {
     super.initState();
-    _loadStatuses();
+    _load();
   }
 
-  Future<void> _loadStatuses() async {
-    final snapshot = await _permissionService.loadStatuses();
+  Future<void> _load() async {
+    final permissionSnapshot = await _permissionService.loadStatuses();
+    final settings = await _settingsStore.load();
     if (!mounted) {
       return;
     }
-    setState(() => _snapshot = snapshot);
+    setState(() {
+      _permissionSnapshot = permissionSnapshot;
+      _settings = settings;
+    });
   }
 
   Future<void> _runPermissionAction(
@@ -37,14 +50,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     setState(() {
-      _snapshot = snapshot;
+      _permissionSnapshot = snapshot;
       _isBusy = false;
     });
   }
 
+  Future<void> _saveSettings(AppSettingsSnapshot settings) async {
+    await _settingsStore.save(settings);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _settings = settings);
+  }
+
+  Future<void> _exportRules() async {
+    final json = await _reminderStore.exportJson();
+    await Clipboard.setData(ClipboardData(text: json));
+    final current = _settings ?? await _settingsStore.load();
+    await _saveSettings(current.copyWith(exportedRulesJson: json));
+    if (!mounted) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: '已导出',
+      message: '提醒规则 JSON 已复制到剪贴板。',
+      icon: Icons.file_upload_outlined,
+    );
+  }
+
+  Future<void> _clearRules() async {
+    final confirmed = await AppFeedbackDialog.confirm(
+      context,
+      title: '清空提醒规则',
+      message: '确定清空所有提醒吗？这会同时移除已注册的地理围栏。',
+      icon: Icons.delete_outline,
+      cancelLabel: '取消',
+      confirmLabel: '清空',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await _reminderStore.clearReminders();
+    await _geofenceService.syncReminders(const []);
+    if (!mounted) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: '已清空',
+      message: '所有提醒规则已删除。',
+      icon: Icons.check_circle_outline,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final snapshot = _snapshot;
+    final permissionSnapshot = _permissionSnapshot;
+    final settings =
+        _settings ??
+        const AppSettingsSnapshot(
+          vibrationEnabled: true,
+          repeatReminderEnabled: false,
+          exportedRulesJson: null,
+        );
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -54,20 +124,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (_isBusy) const LinearProgressIndicator(),
           if (_isBusy) const SizedBox(height: 14),
           _SettingsSection(
-            title: '真机调试权限',
+            title: '权限设置',
             children: [
               _ActionTile(
                 icon: Icons.my_location_outlined,
                 title: '定位与后台定位',
                 subtitle: '用于创建围栏，并在 App 退出后继续判断是否到达地点',
-                status: snapshot == null
+                status: permissionSnapshot == null
                     ? '读取中'
-                    : snapshot.locationReady && snapshot.backgroundReady
+                    : permissionSnapshot.locationReady &&
+                          permissionSnapshot.backgroundReady
                     ? '已允许'
                     : '待授权',
                 isGood:
-                    snapshot?.locationReady == true &&
-                    snapshot?.backgroundReady == true,
+                    permissionSnapshot?.locationReady == true &&
+                    permissionSnapshot?.backgroundReady == true,
                 actionLabel: '申请',
                 onPressed: _isBusy
                     ? null
@@ -79,12 +150,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.notifications_active_outlined,
                 title: '通知权限',
                 subtitle: '到达地点后弹出本地通知',
-                status: snapshot == null
+                status: permissionSnapshot == null
                     ? '读取中'
-                    : snapshot.notificationReady
+                    : permissionSnapshot.notificationReady
                     ? '已允许'
                     : '待授权',
-                isGood: snapshot?.notificationReady == true,
+                isGood: permissionSnapshot?.notificationReady == true,
                 actionLabel: '申请',
                 onPressed: _isBusy
                     ? null
@@ -95,24 +166,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _ActionTile(
                 icon: Icons.battery_saver_outlined,
                 title: '忽略电池优化',
-                subtitle: '红米 K50 还需要手动允许自启动，并把省电策略设为无限制',
-                status: snapshot == null
+                subtitle: '允许后台围栏服务更稳定地运行',
+                status: permissionSnapshot == null
                     ? '读取中'
-                    : snapshot.batteryReady
+                    : permissionSnapshot.batteryReady
                     ? '已允许'
                     : '待配置',
-                isGood: snapshot?.batteryReady == true,
+                isGood: permissionSnapshot?.batteryReady == true,
                 actionLabel: '申请',
                 onPressed: _isBusy
                     ? null
                     : () => _runPermissionAction(
-                        _permissionService.requestBatteryOptimizationPermission,
+                        _permissionService
+                            .requestBatteryOptimizationPermission,
                       ),
               ),
               _ActionTile(
                 icon: Icons.settings_applications_outlined,
                 title: '系统应用设置',
-                subtitle: '用于手动开启后台定位、自启动、通知和省电无限制',
+                subtitle: '手动开启后台定位、自启动、通知和省电无限制',
                 status: '手动',
                 isGood: false,
                 actionLabel: '打开',
@@ -123,42 +195,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 18),
-          const _SettingsSection(
+          _SettingsSection(
             title: '提醒偏好',
             children: [
-              _StaticTile(
+              _SwitchTile(
                 icon: Icons.vibration_outlined,
                 title: '通知震动',
                 subtitle: '触发提醒时同步震动',
-                status: '已开启',
-                isGood: true,
+                value: settings.vibrationEnabled,
+                onChanged: (value) => _saveSettings(
+                  settings.copyWith(vibrationEnabled: value),
+                ),
               ),
-              _StaticTile(
+              _SwitchTile(
                 icon: Icons.repeat_on_outlined,
                 title: '重复提醒',
-                subtitle: '未处理时 15 分钟后再次提醒',
-                status: '关闭',
-                isGood: false,
+                subtitle: '未处理提醒时保留重复提醒偏好',
+                value: settings.repeatReminderEnabled,
+                onChanged: (value) => _saveSettings(
+                  settings.copyWith(repeatReminderEnabled: value),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 18),
-          const _SettingsSection(
+          _SettingsSection(
             title: '数据',
             children: [
-              _StaticTile(
+              _ActionTile(
                 icon: Icons.file_upload_outlined,
                 title: '导出提醒规则',
-                subtitle: '生成本地 JSON 备份',
-                status: '未启用',
-                isGood: false,
+                subtitle: settings.exportedRulesJson == null
+                    ? '生成本地 JSON 备份并复制到剪贴板'
+                    : '已生成过备份，可再次复制最新规则',
+                status: settings.exportedRulesJson == null ? '未导出' : '已导出',
+                isGood: settings.exportedRulesJson != null,
+                actionLabel: '复制',
+                onPressed: _exportRules,
               ),
-              _StaticTile(
-                icon: Icons.privacy_tip_outlined,
-                title: '隐私说明',
-                subtitle: '位置与提醒数据仅保存在本机',
-                status: '本地',
-                isGood: true,
+              _ActionTile(
+                icon: Icons.delete_sweep_outlined,
+                title: '清空提醒规则',
+                subtitle: '删除本机保存的提醒，并同步移除地理围栏',
+                status: '危险操作',
+                isGood: false,
+                actionLabel: '清空',
+                onPressed: _clearRules,
               ),
             ],
           ),
@@ -226,7 +308,7 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: _statusColor),
+      leading: _SettingsIcon(icon: icon, color: _statusColor),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: Wrap(
@@ -241,33 +323,53 @@ class _ActionTile extends StatelessWidget {
   }
 
   Color get _statusColor =>
-      isGood ? const Color(0xFF28785E) : const Color(0xFFC27A2C);
+      isGood ? const Color(0xFF2563EB) : const Color(0xFFEA8A12);
 }
 
-class _StaticTile extends StatelessWidget {
-  const _StaticTile({
+class _SwitchTile extends StatelessWidget {
+  const _SwitchTile({
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.status,
-    required this.isGood,
+    required this.value,
+    required this.onChanged,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final String status;
-  final bool isGood;
+  final bool value;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final color = isGood ? const Color(0xFF28785E) : const Color(0xFFC27A2C);
-
-    return ListTile(
-      leading: Icon(icon, color: color),
+    final color = value ? const Color(0xFF2563EB) : const Color(0xFF64748B);
+    return SwitchListTile(
+      secondary: _SettingsIcon(icon: icon, color: color),
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: _StatusPill(status: status, isGood: isGood),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _SettingsIcon extends StatelessWidget {
+  const _SettingsIcon({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: color, size: 20),
     );
   }
 }
@@ -280,7 +382,7 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isGood ? const Color(0xFF28785E) : const Color(0xFFC27A2C);
+    final color = isGood ? const Color(0xFF2563EB) : const Color(0xFFEA8A12);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

@@ -5,6 +5,7 @@ import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
 
 import '../utils/coordinate_transform.dart';
+import 'app_feedback_dialog.dart';
 
 class MapPicker extends StatefulWidget {
   const MapPicker({
@@ -29,9 +30,9 @@ class MapPicker extends StatefulWidget {
 }
 
 class _MapPickerState extends State<MapPicker> {
-  static const _androidKey = String.fromEnvironment('BAIDU_ANDROID_KEY');
-
   BMFMapController? _mapController;
+  bool _locationChangedByMap = false;
+  bool _mapAlreadyMoved = false;
 
   BMFCoordinate get _selectedBd09Point =>
       CoordinateTransform.wgs84ToBd09(widget.latitude, widget.longitude);
@@ -39,20 +40,38 @@ class _MapPickerState extends State<MapPicker> {
   @override
   void didUpdateWidget(covariant MapPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.latitude != widget.latitude ||
-        oldWidget.longitude != widget.longitude ||
+    final locationChanged =
+        oldWidget.latitude != widget.latitude ||
+        oldWidget.longitude != widget.longitude;
+    final overlayChanged =
+        locationChanged ||
         oldWidget.radiusMeters != widget.radiusMeters ||
-        oldWidget.hasPin != widget.hasPin) {
+        oldWidget.hasPin != widget.hasPin;
+
+    if (overlayChanged) {
       _refreshOverlays();
+    }
+
+    if (locationChanged && !_locationChangedByMap && !_mapAlreadyMoved) {
       _mapController?.setCenterCoordinate(_selectedBd09Point, true);
     }
+
+    _locationChangedByMap = false;
+    _mapAlreadyMoved = false;
   }
 
-  void _selectBd09Point(BMFCoordinate point, {bool moveMap = false}) {
+  void _selectBd09Point(
+    BMFCoordinate point, {
+    bool moveMap = false,
+    bool fromMapGesture = false,
+  }) {
     final wgs84 = CoordinateTransform.bd09ToWgs84(
       point.latitude,
       point.longitude,
     );
+
+    _locationChangedByMap = fromMapGesture;
+    _mapAlreadyMoved = moveMap;
     widget.onPinChanged(true);
     widget.onLocationChanged(wgs84.latitude, wgs84.longitude);
 
@@ -62,8 +81,6 @@ class _MapPickerState extends State<MapPicker> {
   }
 
   Future<void> _locateCurrentPosition() async {
-    final messenger = ScaffoldMessenger.of(context);
-
     try {
       final location = await bg.BackgroundGeolocation.getCurrentPosition(
         samples: 1,
@@ -77,15 +94,18 @@ class _MapPickerState extends State<MapPicker> {
       );
       _selectBd09Point(bd09, moveMap: true);
 
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('已定位到当前位置'),
-          duration: Duration(seconds: 1),
-        ),
+      await AppFeedbackDialog.show(
+        context,
+        title: '已定位',
+        message: '已将地图选点移动到当前位置。',
+        icon: Icons.my_location,
       );
     } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('定位失败，请检查定位权限或稍后重试')),
+      await AppFeedbackDialog.show(
+        context,
+        title: '定位失败',
+        message: '请检查定位权限、系统定位开关，或稍后重试。',
+        icon: Icons.location_disabled_outlined,
       );
     }
   }
@@ -93,10 +113,19 @@ class _MapPickerState extends State<MapPicker> {
   Future<void> _onMapCreated(BMFMapController controller) async {
     _mapController = controller;
     controller.setMapOnClickedMapBlankCallback(
-      callback: (coordinate) => _selectBd09Point(coordinate),
+      callback: (coordinate) => _selectBd09Point(coordinate, moveMap: true),
     );
     controller.setMapOnLongClickCallback(
-      callback: (coordinate) => _selectBd09Point(coordinate),
+      callback: (coordinate) => _selectBd09Point(coordinate, moveMap: true),
+    );
+    controller.setMapRegionDidChangeCallback(
+      callback: (status) {
+        final center = status.targetGeoPt;
+        if (center == null) {
+          return;
+        }
+        _selectBd09Point(center, fromMapGesture: true);
+      },
     );
     await _refreshOverlays();
   }
@@ -118,104 +147,70 @@ class _MapPickerState extends State<MapPicker> {
         center: _selectedBd09Point,
         radius: widget.radiusMeters.toDouble(),
         width: 2,
-        strokeColor: Colors.green,
-        fillColor: const Color(0x3328785E),
+        strokeColor: const Color(0xFF2563EB),
+        fillColor: const Color(0x332563EB),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_androidKey.isEmpty) {
-      return const _MissingBaiduKeyPanel();
-    }
-
     final point = _selectedBd09Point;
 
     return AspectRatio(
       aspectRatio: 1.14,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFE6EEE4),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8DE)),
+          color: const Color(0xFFEAF1FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFD8E3F8)),
         ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            BMFTextureMapWidget(
-              onBMFMapCreated: _onMapCreated,
-              mapOptions: BMFMapOptions(
-                center: point,
-                zoomLevel: 16,
-                mapType: BMFMapType.Standard,
-                showZoomControl: false,
-                showMapScaleBar: true,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              BMFMapWidget(
+                onBMFMapCreated: _onMapCreated,
+                mapOptions: BMFMapOptions(
+                  center: point,
+                  zoomLevel: 16,
+                  mapType: BMFMapType.Standard,
+                  showZoomControl: false,
+                  showMapScaleBar: true,
+                  scrollEnabled: true,
+                  zoomEnabled: true,
+                ),
               ),
-            ),
-            const Positioned(
-              left: 14,
-              top: 14,
-              child: _MapBadge(
-                icon: Icons.touch_app_outlined,
-                text: '点击地图选择位置',
+              const Positioned(
+                left: 14,
+                top: 14,
+                child: _MapBadge(
+                  icon: Icons.swipe_outlined,
+                  text: '拖动地图调整选点',
+                ),
               ),
-            ),
-            Positioned(
-              left: 14,
-              bottom: 14,
-              child: _CoordinateBadge(
-                latitude: widget.latitude,
-                longitude: widget.longitude,
+              const Center(child: IgnorePointer(child: _CenterPin())),
+              Positioned(
+                left: 14,
+                bottom: 14,
+                child: _CoordinateBadge(
+                  latitude: widget.latitude,
+                  longitude: widget.longitude,
+                ),
               ),
-            ),
-            Positioned(
-              right: 14,
-              bottom: 14,
-              child: FloatingActionButton.small(
-                heroTag: 'mapPickerLocate',
-                tooltip: '回到当前位置',
-                onPressed: _locateCurrentPosition,
-                child: const Icon(Icons.my_location),
+              Positioned(
+                right: 14,
+                bottom: 14,
+                child: FloatingActionButton.small(
+                  heroTag: 'mapPickerLocate',
+                  tooltip: '回到当前位置',
+                  onPressed: _locateCurrentPosition,
+                  child: const Icon(Icons.my_location),
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MissingBaiduKeyPanel extends StatelessWidget {
-  const _MissingBaiduKeyPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1.14,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2E8DE)),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.map_outlined, size: 40, color: Color(0xFF28785E)),
-            SizedBox(height: 12),
-            Text(
-              '缺少百度地图 AK',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '请使用 --dart-define=BAIDU_ANDROID_KEY=你的AK 启动真机调试。',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF66756C), height: 1.35),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -258,6 +253,31 @@ class _MapBadge extends StatelessWidget {
   }
 }
 
+class _CenterPin extends StatelessWidget {
+  const _CenterPin();
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.translate(
+      offset: const Offset(0, -18),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_on, size: 42, color: Color(0xFF2563EB)),
+          SizedBox(height: 2),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Color(0x33000000),
+              borderRadius: BorderRadius.all(Radius.elliptical(18, 6)),
+            ),
+            child: SizedBox(width: 24, height: 6),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CoordinateBadge extends StatelessWidget {
   const _CoordinateBadge({required this.latitude, required this.longitude});
 
@@ -270,7 +290,7 @@ class _CoordinateBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(
             color: Color(0x16000000),

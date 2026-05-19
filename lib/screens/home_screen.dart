@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../services/geofence_service.dart';
 import '../models/reminder.dart';
+import '../services/geofence_service.dart';
+import '../services/permission_service.dart';
 import '../services/reminder_store.dart';
+import '../widgets/app_feedback_dialog.dart';
 import '../widgets/permission_banner.dart';
 import '../widgets/reminder_card.dart';
+import 'profile_screen.dart';
 import 'reminder_editor_screen.dart';
 import 'settings_screen.dart';
 
@@ -19,9 +22,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AppGeofenceService _geofenceService = const AppGeofenceService();
+  final AppPermissionService _permissionService = const AppPermissionService();
   final ReminderStore _store = const ReminderStore();
   final TextEditingController _searchController = TextEditingController();
   List<Reminder> _reminders = const [];
+  AppPermissionSnapshot? _permissionSnapshot;
   String _query = '';
   _ReminderFilter _filter = _ReminderFilter.all;
   int _selectedIndex = 0;
@@ -31,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadReminders();
+    _loadPermissionSnapshot();
     _searchController.addListener(() {
       setState(() => _query = _searchController.text.trim());
     });
@@ -55,11 +61,28 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _loadPermissionSnapshot() async {
+    final snapshot = await _permissionService.loadStatuses();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _permissionSnapshot = snapshot);
+  }
+
   Future<void> _saveReminders() {
     return Future.wait([
       _store.saveReminders(_reminders),
       _geofenceService.syncReminders(_reminders),
     ]).then((_) {});
+  }
+
+  bool get _permissionsReady {
+    final snapshot = _permissionSnapshot;
+    return snapshot != null &&
+        snapshot.locationReady &&
+        snapshot.backgroundReady &&
+        snapshot.notificationReady &&
+        snapshot.batteryReady;
   }
 
   List<Reminder> get _visibleReminders {
@@ -94,58 +117,86 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    var isCreated = false;
     setState(() {
       final index = _reminders.indexWhere((item) => item.id == result.id);
       if (index == -1) {
+        isCreated = true;
         _reminders = [result, ..._reminders];
       } else {
         _reminders[index] = result;
       }
     });
     await _saveReminders();
+    if (!mounted) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: isCreated ? '已创建提醒' : '已保存修改',
+      message: '“${result.locationName}”的提醒规则已同步更新。',
+      icon: Icons.check_circle_outline,
+    );
   }
 
   Future<void> _deleteReminder(Reminder reminder) async {
-    final messenger = ScaffoldMessenger.of(context);
-
     setState(() {
       _reminders.removeWhere((item) => item.id == reminder.id);
     });
     await _saveReminders();
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('已删除「${reminder.locationName}」'),
-        action: SnackBarAction(
-          label: '撤销',
-          onPressed: () {
-            setState(() => _reminders = [reminder, ..._reminders]);
-            _saveReminders();
-          },
-        ),
-      ),
+    if (!mounted) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: '已删除',
+      message: '“${reminder.locationName}”已删除。',
+      icon: Icons.check_circle_outline,
+      actionLabel: '撤销',
+      onAction: () {
+        setState(() => _reminders = [reminder, ..._reminders]);
+        _saveReminders();
+      },
     );
   }
 
   Future<void> _toggleReminder(Reminder reminder, bool enabled) async {
-    final messenger = ScaffoldMessenger.of(context);
-
     setState(() {
       final index = _reminders.indexWhere((item) => item.id == reminder.id);
       _reminders[index] = reminder.copyWith(isEnabled: enabled);
     });
     await _saveReminders();
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          enabled
-              ? '已启用「${reminder.locationName}」'
-              : '已暂停「${reminder.locationName}」',
-        ),
-        duration: const Duration(seconds: 1),
-      ),
+    if (!mounted) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: enabled ? '已启用' : '已暂停',
+      message: enabled
+          ? '“${reminder.locationName}”已启用，到达后会触发提醒。'
+          : '“${reminder.locationName}”已暂停，暂时不会触发提醒。',
+      icon: enabled
+          ? Icons.notifications_active_outlined
+          : Icons.pause_circle_outline,
     );
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+    await _loadPermissionSnapshot();
+    await _loadReminders();
+  }
+
+  void _selectTab(int index) {
+    setState(() => _selectedIndex = index);
+    if (index == 0) {
+      _loadPermissionSnapshot();
+      _loadReminders();
+    }
   }
 
   @override
@@ -170,8 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 _HomeHeader(
                                   onAdd: () => _openEditor(),
-                                  onSettings: () =>
-                                      setState(() => _selectedIndex = 1),
+                                  onProfile: () => _selectTab(1),
                                 ),
                                 const SizedBox(height: 18),
                                 TextField(
@@ -182,11 +232,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                     prefixIcon: Icon(Icons.search),
                                   ),
                                 ),
-                                const SizedBox(height: 14),
-                                PermissionBanner(
-                                  onOpenSettings: () =>
-                                      setState(() => _selectedIndex = 1),
-                                ),
+                                if (!_permissionsReady) ...[
+                                  const SizedBox(height: 14),
+                                  PermissionBanner(
+                                    onOpenSettings: _openSettings,
+                                  ),
+                                ],
                                 const SizedBox(height: 14),
                                 _StatusStrip(
                                   activeCount: activeCount,
@@ -230,12 +281,23 @@ class _HomeScreenState extends State<HomeScreen> {
                                   key: ValueKey(reminder.id),
                                   direction: DismissDirection.endToStart,
                                   background: const SizedBox.shrink(),
+                                  confirmDismiss: (_) {
+                                    return AppFeedbackDialog.confirm(
+                                      context,
+                                      title: '删除提醒',
+                                      message:
+                                          '确定删除“${reminder.locationName}”吗？删除后会同步移除地理围栏监听。',
+                                      icon: Icons.delete_outline,
+                                      cancelLabel: '取消',
+                                      confirmLabel: '删除',
+                                    );
+                                  },
                                   secondaryBackground: Container(
                                     alignment: Alignment.centerRight,
                                     padding: const EdgeInsets.only(right: 20),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFB9493C),
-                                      borderRadius: BorderRadius.circular(8),
+                                      color: const Color(0xFFE11D48),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Icon(
                                       Icons.delete_outline,
@@ -256,11 +318,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   )
-          : const SettingsScreen(),
+          : const ProfileScreen(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
@@ -268,9 +329,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: '事件',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '个人',
           ),
         ],
       ),
@@ -286,50 +347,76 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.onAdd, required this.onSettings});
+  const _HomeHeader({required this.onAdd, required this.onProfile});
 
   final VoidCallback onAdd;
-  final VoidCallback onSettings;
+  final VoidCallback onProfile;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '临场记',
-                style: textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF16231D),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '到地方，自动想起来',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF66756C),
-                ),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 14, 18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x332563EB),
+            blurRadius: 22,
+            offset: Offset(0, 12),
           ),
-        ),
-        IconButton.filledTonal(
-          tooltip: '设置',
-          onPressed: onSettings,
-          icon: const Icon(Icons.tune),
-        ),
-        const SizedBox(width: 8),
-        IconButton.filled(
-          tooltip: '新增提醒',
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-        ),
-      ],
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '临场记',
+                  style: textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '到地方，自动想起来',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFEAF1FF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton.filledTonal(
+            tooltip: '个人',
+            onPressed: onProfile,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.18),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.person_outline),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            tooltip: '新增提醒',
+            onPressed: onAdd,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF2563EB),
+            ),
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -356,7 +443,7 @@ class _StatusStrip extends StatelessWidget {
             icon: Icons.radar_outlined,
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Expanded(
           child: _StatusTile(
             label: '暂停',
@@ -364,7 +451,7 @@ class _StatusStrip extends StatelessWidget {
             icon: Icons.pause_circle_outline,
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Expanded(
           child: _StatusTile(
             label: '全部',
@@ -391,24 +478,44 @@ class _StatusTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.all(10),
+      constraints: const BoxConstraints(minHeight: 74),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8DE)),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD8E3F8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F2563EB),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: Theme.of(context).colorScheme.primary, size: 18),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF1FF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: Theme.of(context).colorScheme.primary,
+              size: 17,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             value,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
               height: 1,
+              color: const Color(0xFF10203F),
             ),
           ),
           Text(
@@ -417,7 +524,7 @@ class _StatusTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756C)),
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF60708F)),
           ),
         ],
       ),
@@ -435,6 +542,14 @@ class _FilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SegmentedButton<_ReminderFilter>(
       showSelectedIcon: false,
+      style: SegmentedButton.styleFrom(
+        backgroundColor: Colors.white,
+        selectedBackgroundColor: const Color(0xFFEAF1FF),
+        selectedForegroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: const Color(0xFF52627F),
+        side: const BorderSide(color: Color(0xFFD8E3F8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
       segments: const [
         ButtonSegment(
           value: _ReminderFilter.all,
@@ -500,7 +615,7 @@ class _EmptyState extends StatelessWidget {
           Text(
             hasQuery ? '换个关键词或查看全部状态。' : '点击新增，在地图上圈出到达后需要提醒的位置。',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF66756C)),
+            style: const TextStyle(color: Color(0xFF60708F)),
           ),
           const SizedBox(height: 18),
           FilledButton.icon(

@@ -18,26 +18,26 @@ class ReminderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     final muted = reminder.isEnabled
-        ? const Color(0xFF66756C)
-        : const Color(0xFF98A39B);
+        ? const Color(0xFF60708F)
+        : const Color(0xFF9AA8BD);
 
     return Card(
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: primary.withValues(
-                    alpha: reminder.isEnabled ? 0.12 : 0.06,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
+                  color: reminder.isEnabled
+                      ? const Color(0xFFEAF1FF)
+                      : const Color(0xFFF0F4FA),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   Icons.location_on_outlined,
@@ -60,7 +60,7 @@ class ReminderCard extends StatelessWidget {
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: reminder.isEnabled
-                                      ? const Color(0xFF16231D)
+                                      ? const Color(0xFF10203F)
                                       : muted,
                                 ),
                           ),
@@ -76,8 +76,8 @@ class ReminderCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: reminder.isEnabled
-                            ? const Color(0xFF34443A)
-                            : const Color(0xFF98A39B),
+                            ? const Color(0xFF42516D)
+                            : const Color(0xFF9AA8BD),
                         height: 1.3,
                       ),
                     ),
@@ -101,7 +101,7 @@ class ReminderCard extends StatelessWidget {
                       Text(
                         '上次触发：${reminder.lastTriggeredLabel}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF66756C),
+                          color: const Color(0xFF60708F),
                         ),
                       ),
                     ],
@@ -125,12 +125,12 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isEnabled ? const Color(0xFF28785E) : const Color(0xFF8A938D);
+    final color = isEnabled ? const Color(0xFF2563EB) : const Color(0xFF8A97AE);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
@@ -156,18 +156,18 @@ class _MetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF2F5F0),
+        color: const Color(0xFFF0F5FF),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF66756C)),
+          Icon(icon, size: 14, color: const Color(0xFF60708F)),
           const SizedBox(width: 4),
           Text(
             text,
             style: const TextStyle(
-              color: Color(0xFF526158),
+              color: Color(0xFF52627F),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),

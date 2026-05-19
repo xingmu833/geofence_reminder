@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/reminder.dart';
 import '../services/baidu_geocoding_service.dart';
+import '../widgets/app_feedback_dialog.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/radius_selector.dart';
 
@@ -58,14 +59,17 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
     if (!_hasPin) {
-      ScaffoldMessenger.of(
+      await AppFeedbackDialog.show(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请先在地图上选择提醒位置')));
+        title: '还没有选点',
+        message: '请先在地图上选择提醒位置，再保存提醒。',
+        icon: Icons.add_location_alt_outlined,
+      );
       return;
     }
 
@@ -91,43 +95,94 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
   }
 
   Future<void> _searchLocationByName() async {
-    final messenger = ScaffoldMessenger.of(context);
     final query = _locationController.text.trim();
     if (query.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('请先输入地点名称')));
+      await AppFeedbackDialog.show(
+        context,
+        title: '请输入地点',
+        message: '请先输入地点名称，再搜索附近真实地点。',
+        icon: Icons.search,
+      );
       return;
     }
 
+    FocusScope.of(context).unfocus();
     setState(() => _isSearchingLocation = true);
     try {
-      final result = await _geocodingService.searchAddress(query);
+      final searchRadius = (_radiusMeters * 20).clamp(3000, 20000).toInt();
+      final results = await _geocodingService.searchNearbyPlaces(
+        keyword: query,
+        centerLatitude: _latitude,
+        centerLongitude: _longitude,
+        radiusMeters: searchRadius,
+      );
       if (!mounted) {
         return;
       }
 
-      if (result == null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('没有找到这个地点，请补充城市或更具体的地址')),
+      if (results.isEmpty) {
+        await AppFeedbackDialog.show(
+          context,
+          title: '没有找到地点',
+          message: '附近没有找到匹配地点，请移动地图到目标区域，或换一个更具体的关键词。',
+          icon: Icons.manage_search,
         );
         return;
       }
 
+      final selected = await _showPlacePicker(results);
+      if (!mounted || selected == null) {
+        return;
+      }
+
       setState(() {
-        _latitude = result.latitude;
-        _longitude = result.longitude;
+        _locationController.text = selected.name;
+        _latitude = selected.latitude;
+        _longitude = selected.longitude;
         _hasPin = true;
       });
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('已定位到输入地点'),
-          duration: Duration(seconds: 1),
-        ),
+      await AppFeedbackDialog.show(
+        context,
+        title: '已定位',
+        message: '已将地图选点移动到「${selected.name}」。',
+        icon: Icons.place_outlined,
       );
     } finally {
       if (mounted) {
         setState(() => _isSearchingLocation = false);
       }
     }
+  }
+
+  Future<BaiduPlaceResult?> _showPlacePicker(List<BaiduPlaceResult> places) {
+    return showModalBottomSheet<BaiduPlaceResult>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: ListView.separated(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            itemCount: places.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final place = places[index];
+              final subtitle = place.subtitle;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.place_outlined),
+                title: Text(place.name),
+                subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                trailing: place.distanceMeters == null
+                    ? null
+                    : Text('${place.distanceMeters}m'),
+                onTap: () => Navigator.of(context).pop(place),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _pickTime({required bool isStart}) async {
@@ -256,7 +311,7 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                 hintText: '例如：康宁大药房',
                 prefixIcon: const Icon(Icons.place_outlined),
                 suffixIcon: IconButton(
-                  tooltip: '搜索地点',
+                  tooltip: '搜索附近地点',
                   onPressed: _isSearchingLocation
                       ? null
                       : _searchLocationByName,
@@ -298,7 +353,7 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                   subtitle: Text(
                     _allDay
                         ? '全天都可以触发'
-                        : '仅 ${_formatTime(_startTime)}-${_formatTime(_endTime)} 生效',
+                        : '从 ${_formatTime(_startTime)}-${_formatTime(_endTime)} 生效',
                   ),
                   value: _allDay,
                   onChanged: (value) => setState(() => _allDay = value),
@@ -413,7 +468,7 @@ class _TimeButton extends StatelessWidget {
             label,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756C)),
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF60708F)),
           ),
           const SizedBox(height: 4),
           Text(

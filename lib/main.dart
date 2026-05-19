@@ -24,10 +24,14 @@ Future<void> _initializeBaiduMap() async {
   if (Platform.isAndroid) {
     const androidKey = String.fromEnvironment('BAIDU_ANDROID_KEY');
     await BMFAndroidVersion.initAndroidVersion();
-    BMFMapSDK.setApiKeyAndCoordType(androidKey, BMF_COORD_TYPE.BD09LL);
+    if (androidKey.isNotEmpty) {
+      BMFMapSDK.setApiKeyAndCoordType(androidKey, BMF_COORD_TYPE.BD09LL);
+    }
   } else if (Platform.isIOS) {
     const iosKey = String.fromEnvironment('BAIDU_IOS_KEY');
-    BMFMapSDK.setApiKeyAndCoordType(iosKey, BMF_COORD_TYPE.BD09LL);
+    if (iosKey.isNotEmpty) {
+      BMFMapSDK.setApiKeyAndCoordType(iosKey, BMF_COORD_TYPE.BD09LL);
+    }
   }
 }
 
@@ -61,7 +65,9 @@ class GeofenceReminderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF28785E);
+    const seed = Color(0xFF2563EB);
+    const background = Color(0xFFF5F8FF);
+    const outline = Color(0xFFD8E3F8);
 
     return MaterialApp(
       title: '临场记',
@@ -71,45 +77,74 @@ class GeofenceReminderApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: seed,
           brightness: Brightness.light,
-          surface: const Color(0xFFF6F8F4),
+          surface: Colors.white,
+          surfaceContainerHighest: const Color(0xFFEAF1FF),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF6F8F4),
+        scaffoldBackgroundColor: background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF6F8F4),
-          foregroundColor: Color(0xFF16231D),
+          backgroundColor: background,
+          foregroundColor: Color(0xFF10203F),
           elevation: 0,
           centerTitle: false,
         ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: Colors.white,
+          indicatorColor: const Color(0xFFE4ECFF),
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
         cardTheme: CardThemeData(
           color: Colors.white,
-          elevation: 0,
+          elevation: 0.5,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: Color(0xFFE2E8DE)),
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: outline),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFDDE6DA)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: outline),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFDDE6DA)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: outline),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: seed, width: 1.4),
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
             ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: seed,
+            side: const BorderSide(color: outline),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? Colors.white
+                : const Color(0xFF8A99B5),
+          ),
+          trackColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? seed
+                : const Color(0xFFDCE5F6),
           ),
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(

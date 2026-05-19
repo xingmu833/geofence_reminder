@@ -12,6 +12,10 @@ class AppGeofenceService {
   Future<void> initialize() async {
     await NotificationService.initialize();
 
+    if (_ready) {
+      return;
+    }
+
     bg.BackgroundGeolocation.onGeofence((bg.GeofenceEvent event) async {
       if (event.action != 'ENTER') {
         return;
@@ -29,10 +33,6 @@ class AppGeofenceService {
         body: event.extras?['title'] as String? ?? '你有一条位置提醒',
       );
     });
-
-    if (_ready) {
-      return;
-    }
 
     final state = await bg.BackgroundGeolocation.ready(
       bg.Config(
