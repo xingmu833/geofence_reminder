@@ -10,15 +10,15 @@ class ReminderStore {
   static const _storageKey = 'reminders.v1';
   static const _trashStorageKey = 'reminders.trash.v1';
   static const _maxTrashCount = 50;
+  static const _demoReminderIds = {1, 2, 3};
 
   Future<List<Reminder>> loadReminders() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_storageKey);
 
     if (raw == null) {
-      final defaultReminders = Reminder.demoList();
-      await saveReminders(defaultReminders);
-      return defaultReminders;
+      await saveReminders(const []);
+      return const [];
     }
 
     try {
@@ -27,10 +27,17 @@ class ReminderStore {
         return const [];
       }
 
-      return decoded
+      final reminders = decoded
           .whereType<Map>()
           .map((item) => Reminder.fromJson(Map<String, dynamic>.from(item)))
           .toList();
+      final withoutDemoReminders = reminders
+          .where((item) => !_demoReminderIds.contains(item.id))
+          .toList();
+      if (withoutDemoReminders.length != reminders.length) {
+        await saveReminders(withoutDemoReminders);
+      }
+      return withoutDemoReminders;
     } catch (_) {
       return const [];
     }
