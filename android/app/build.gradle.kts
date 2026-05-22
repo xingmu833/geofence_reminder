@@ -18,6 +18,21 @@ val localProperties =
         }
     }
 
+val keystoreProperties =
+    Properties().apply {
+        val keystorePropertiesFile = rootProject.file("key.properties")
+        if (keystorePropertiesFile.exists()) {
+            keystorePropertiesFile.inputStream().use { stream ->
+                load(stream)
+            }
+        }
+    }
+
+val hasReleaseSigning =
+    listOf("storeFile", "storePassword", "keyAlias", "keyPassword").all {
+        keystoreProperties.getProperty(it)?.isNotBlank() == true
+    }
+
 fun dartDefineValue(name: String): String? {
     val encodedDefines = project.findProperty("dart-defines") as? String
     return encodedDefines
@@ -76,11 +91,25 @@ android {
         manifestPlaceholders["BAIDU_API_KEY"] = baiduAndroidKey
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                if (hasReleaseSigning) {
+                    signingConfigs.getByName("release")
+                } else {
+                    signingConfigs.getByName("debug")
+                }
         }
     }
 }
