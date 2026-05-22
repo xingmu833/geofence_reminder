@@ -35,6 +35,19 @@ fun dartDefineValue(name: String): String? {
 val backgroundGeolocation = project(":flutter_background_geolocation")
 apply(from = "${backgroundGeolocation.projectDir}/background_geolocation.gradle")
 
+val baiduAndroidKey =
+    dartDefineValue("BAIDU_ANDROID_KEY")
+        ?: localProperties.getProperty("baidu.apiKey")
+        ?: localProperties.getProperty("BAIDU_ANDROID_KEY")
+        ?: ""
+
+if (baiduAndroidKey.isBlank()) {
+    throw GradleException(
+        "Missing Baidu Android AK. Set baidu.apiKey=your_key in android/local.properties " +
+            "or pass --dart-define=BAIDU_ANDROID_KEY=your_key."
+    )
+}
+
 android {
     namespace = "com.example.geofence_reminder"
     compileSdk = flutter.compileSdkVersion
@@ -60,9 +73,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["BAIDU_API_KEY"] =
-            dartDefineValue("BAIDU_ANDROID_KEY")
-                ?: localProperties.getProperty("baidu.apiKey", "")
+        manifestPlaceholders["BAIDU_API_KEY"] = baiduAndroidKey
     }
 
     buildTypes {

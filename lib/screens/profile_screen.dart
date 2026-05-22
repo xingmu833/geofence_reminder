@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/user_profile_store.dart';
 import 'personal_info_screen.dart';
+import 'recycle_bin_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -42,6 +43,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
 
+  Future<void> _openRecycleBin() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RecycleBinScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = _profile;
@@ -79,6 +86,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: '设置',
                     subtitle: '权限、提醒偏好和数据管理',
                     onTap: _openSettings,
+                  ),
+                  const Divider(height: 1, indent: 68),
+                  _ProfileItem(
+                    icon: Icons.delete_outline,
+                    title: '回收站',
+                    subtitle: '查看、还原或永久删除事件',
+                    onTap: _openRecycleBin,
                   ),
                 ],
               ),

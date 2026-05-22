@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/reminder.dart';
 import '../services/app_settings_store.dart';
 import '../services/geofence_service.dart';
+import '../services/notification_service.dart';
 import '../services/permission_service.dart';
 import '../services/reminder_store.dart';
 import '../widgets/app_feedback_dialog.dart';
@@ -21,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final AppGeofenceService _geofenceService = const AppGeofenceService();
   AppPermissionSnapshot? _permissionSnapshot;
   AppSettingsSnapshot? _settings;
+  DeviceSupportInfo? _deviceSupportInfo;
   bool _isBusy = false;
 
   @override
@@ -32,12 +35,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _load() async {
     final permissionSnapshot = await _permissionService.loadStatuses();
     final settings = await _settingsStore.load();
+    final deviceSupportInfo = await _permissionService.loadDeviceSupportInfo();
     if (!mounted) {
       return;
     }
     setState(() {
       _permissionSnapshot = permissionSnapshot;
       _settings = settings;
+      _deviceSupportInfo = deviceSupportInfo;
     });
   }
 
@@ -105,6 +110,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _sendTestNotification(AlertMode alertMode) async {
+    try {
+      await NotificationService.showGeofenceReminder(
+        id: alertMode == AlertMode.alarm ? 900002 : 900001,
+        title: alertMode == AlertMode.alarm ? '强提醒测试' : '通知提醒测试',
+        body: '如果你看到这条提醒，说明通知链路正常。',
+        alertMode: alertMode,
+      );
+      if (!mounted) {
+        return;
+      }
+      await AppFeedbackDialog.show(
+        context,
+        title: '测试已发送',
+        message: '如果没有看到系统提醒，请检查系统通知权限、通知渠道和勿扰模式。',
+        icon: Icons.notifications_active_outlined,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await AppFeedbackDialog.show(
+        context,
+        title: '测试失败',
+        message: '$error',
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
+  Future<void> _openVendorGuide(DeviceSupportInfo info) async {
+    final confirmed = await AppFeedbackDialog.confirm(
+      context,
+      title: '${info.vendorName}权限建议',
+      message:
+          '为了让后台定位和强提醒更稳定，请在系统设置中确认：${info.subtitle}。不同系统版本入口名称可能略有差异。',
+      icon: Icons.admin_panel_settings_outlined,
+      cancelLabel: '稍后',
+      confirmLabel: '去设置',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    final opened = await _permissionService.openVendorPowerSettings();
+    if (!mounted || opened) {
+      return;
+    }
+    await AppFeedbackDialog.show(
+      context,
+      title: '无法直达设置页',
+      message: '系统拦截了厂商权限入口，请从应用信息页手动检查后台运行、省电策略、自启动和锁屏通知。',
+      icon: Icons.settings_outlined,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final permissionSnapshot = _permissionSnapshot;
@@ -115,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           repeatReminderEnabled: false,
           exportedRulesJson: null,
         );
+    final deviceSupportInfo = _deviceSupportInfo;
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -192,6 +254,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? null
                     : () => _permissionService.openSystemSettings(),
               ),
+              if (deviceSupportInfo != null &&
+                  deviceSupportInfo.hasVendorGuide)
+                _ActionTile(
+                  icon: Icons.security_outlined,
+                  title: '${deviceSupportInfo.vendorName}后台策略',
+                  subtitle: deviceSupportInfo.subtitle,
+                  status: '建议配置',
+                  isGood: false,
+                  actionLabel: '查看',
+                  onPressed: _isBusy
+                      ? null
+                      : () => _openVendorGuide(deviceSupportInfo),
+                ),
             ],
           ),
           const SizedBox(height: 18),
@@ -215,6 +290,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (value) => _saveSettings(
                   settings.copyWith(repeatReminderEnabled: value),
                 ),
+              ),
+              _ActionTile(
+                icon: Icons.music_note_outlined,
+                title: '铃声与通知渠道',
+                subtitle: '强提醒/通知的铃声、震动等由系统通知渠道管理',
+                status: '系统设置',
+                isGood: true,
+                actionLabel: '打开',
+                onPressed: () => _permissionService.openSystemSettings(),
+              ),
+              _ActionTile(
+                icon: Icons.notifications_none_outlined,
+                title: '测试通知提醒',
+                subtitle: '不经过定位，直接发送一条普通通知',
+                status: '测试',
+                isGood: true,
+                actionLabel: '发送',
+                onPressed: () => _sendTestNotification(AlertMode.notification),
+              ),
+              _ActionTile(
+                icon: Icons.alarm_outlined,
+                title: '测试强提醒',
+                subtitle: '不经过定位，直接发送一条高优先级提醒',
+                status: '测试',
+                isGood: true,
+                actionLabel: '发送',
+                onPressed: () => _sendTestNotification(AlertMode.alarm),
               ),
             ],
           ),

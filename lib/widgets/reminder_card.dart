@@ -40,7 +40,9 @@ class ReminderCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  Icons.location_on_outlined,
+                  reminder.alertMode == AlertMode.alarm
+                      ? Icons.alarm_outlined
+                      : Icons.location_on_outlined,
                   color: reminder.isEnabled ? primary : muted,
                 ),
               ),
@@ -94,12 +96,22 @@ class ReminderCard extends StatelessWidget {
                           icon: Icons.schedule,
                           text: reminder.scheduleLabel,
                         ),
+                        _MetaChip(
+                          icon: reminder.alertMode == AlertMode.alarm
+                              ? Icons.alarm_outlined
+                              : Icons.notifications_none_outlined,
+                          text: reminder.alertModeLabel,
+                        ),
+                        _MetaChip(
+                          icon: Icons.repeat,
+                          text: reminder.triggerLimitLabel,
+                        ),
                       ],
                     ),
-                    if (reminder.lastTriggeredLabel != null) ...[
+                    if (reminder.displayLastTriggeredLabel != null) ...[
                       const SizedBox(height: 10),
                       Text(
-                        '上次触发：${reminder.lastTriggeredLabel}',
+                        '上次触发：${reminder.displayLastTriggeredLabel}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: const Color(0xFF60708F),
                         ),

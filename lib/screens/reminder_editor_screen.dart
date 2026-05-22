@@ -26,6 +26,8 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   late TriggerLimit _triggerLimit;
+  late int _dailyTriggerLimit;
+  late AlertMode _alertMode;
   late double _latitude;
   late double _longitude;
   bool _hasPin = true;
@@ -50,6 +52,8 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
     _startTime = scheduleRange?.start ?? const TimeOfDay(hour: 18, minute: 0);
     _endTime = scheduleRange?.end ?? const TimeOfDay(hour: 21, minute: 0);
     _triggerLimit = reminder?.triggerLimit ?? TriggerLimit.always;
+    _dailyTriggerLimit = reminder?.dailyTriggerLimit ?? 1;
+    _alertMode = reminder?.alertMode ?? AlertMode.notification;
   }
 
   @override
@@ -77,7 +81,7 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
     final old = widget.reminder;
     Navigator.of(context).pop(
       Reminder(
-        id: old?.id ?? now.microsecondsSinceEpoch,
+        id: old?.id ?? _createReminderId(now),
         title: _titleController.text.trim(),
         locationName: _locationController.text.trim(),
         latitude: _latitude,
@@ -85,11 +89,17 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
         radiusMeters: _radiusMeters,
         isEnabled: _isEnabled,
         triggerLimit: _triggerLimit,
+        dailyTriggerLimit: _dailyTriggerLimit,
+        alertMode: _alertMode,
         scheduleLabel: _allDay
             ? '全天生效'
             : '${_formatTime(_startTime)}-${_formatTime(_endTime)}',
         createdAt: old?.createdAt ?? now,
+        lastTriggeredAt: old?.lastTriggeredAt,
         lastTriggeredLabel: old?.lastTriggeredLabel,
+        dailyTriggeredCount: old?.dailyTriggeredCount ?? 0,
+        dailyTriggerDate: old?.dailyTriggerDate,
+        isInsideGeofence: old?.isInsideGeofence ?? false,
       ),
     );
   }
@@ -144,7 +154,7 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
       await AppFeedbackDialog.show(
         context,
         title: '已定位',
-        message: '已将地图选点移动到「${selected.name}」。',
+        message: '已将地图选点移动到“${selected.name}”。',
         icon: Icons.place_outlined,
       );
     } finally {
@@ -253,6 +263,10 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
     return '$hour:$minute';
   }
 
+  int _createReminderId(DateTime time) {
+    return Reminder.normalizeId(time.millisecondsSinceEpoch);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -353,7 +367,7 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                   subtitle: Text(
                     _allDay
                         ? '全天都可以触发'
-                        : '从 ${_formatTime(_startTime)}-${_formatTime(_endTime)} 生效',
+                        : '仅在 ${_formatTime(_startTime)}-${_formatTime(_endTime)} 生效',
                   ),
                   value: _allDay,
                   onChanged: (value) => setState(() => _allDay = value),
@@ -370,6 +384,31 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
               ],
             ),
             const SizedBox(height: 18),
+            _SectionLabel(
+              title: '提醒方式',
+              subtitle: '强提醒会使用高优先级通知渠道，铃声可在系统通知设置中调整。',
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<AlertMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: AlertMode.notification,
+                  icon: Icon(Icons.notifications_none_outlined),
+                  label: Text('通知'),
+                ),
+                ButtonSegment(
+                  value: AlertMode.alarm,
+                  icon: Icon(Icons.alarm_outlined),
+                  label: Text('强提醒'),
+                ),
+              ],
+              selected: {_alertMode},
+              onSelectionChanged: (values) {
+                setState(() => _alertMode = values.first);
+              },
+            ),
+            const SizedBox(height: 18),
             SegmentedButton<TriggerLimit>(
               showSelectedIcon: false,
               segments: const [
@@ -379,9 +418,14 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                   label: Text('每次进入'),
                 ),
                 ButtonSegment(
-                  value: TriggerLimit.oncePerDay,
+                  value: TriggerLimit.once,
+                  icon: Icon(Icons.looks_one_outlined),
+                  label: Text('仅此一次'),
+                ),
+                ButtonSegment(
+                  value: TriggerLimit.daily,
                   icon: Icon(Icons.today_outlined),
-                  label: Text('每天一次'),
+                  label: Text('每天多次'),
                 ),
               ],
               selected: {_triggerLimit},
@@ -389,6 +433,13 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
                 setState(() => _triggerLimit = values.first);
               },
             ),
+            if (_triggerLimit == TriggerLimit.daily) ...[
+              const SizedBox(height: 12),
+              _DailyTriggerLimitPicker(
+                value: _dailyTriggerLimit,
+                onChanged: (value) => setState(() => _dailyTriggerLimit = value),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _save,
@@ -397,6 +448,84 @@ class _ReminderEditorScreenState extends State<ReminderEditorScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(subtitle, style: const TextStyle(color: Color(0xFF60708F))),
+      ],
+    );
+  }
+}
+
+class _DailyTriggerLimitPicker extends StatelessWidget {
+  const _DailyTriggerLimitPicker({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD8E3F8)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.repeat_on_outlined, color: Color(0xFF60708F)),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              '每天触发次数',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          IconButton.outlined(
+            tooltip: '减少次数',
+            onPressed: value <= 1 ? null : () => onChanged(value - 1),
+            icon: const Icon(Icons.remove),
+          ),
+          SizedBox(
+            width: 48,
+            child: Text(
+              '$value次',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+          ),
+          IconButton.outlined(
+            tooltip: '增加次数',
+            onPressed: value >= 24 ? null : () => onChanged(value + 1),
+            icon: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

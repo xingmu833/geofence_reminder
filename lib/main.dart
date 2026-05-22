@@ -7,7 +7,8 @@ import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
 
 import 'screens/home_screen.dart';
-import 'services/notification_service.dart';
+import 'services/app_navigation_service.dart';
+import 'services/geofence_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,27 +38,42 @@ Future<void> _initializeBaiduMap() async {
 
 @pragma('vm:entry-point')
 void backgroundGeolocationHeadlessTask(bg.HeadlessEvent event) async {
-  if (event.name != bg.Event.GEOFENCE) {
+  final geofenceService = const AppGeofenceService();
+
+  if (event.name == bg.Event.GEOFENCE) {
+    final geofenceEvent = event.event as bg.GeofenceEvent;
+    if (geofenceEvent.action != 'ENTER') {
+      return;
+    }
+
+    final reminderId = int.tryParse(
+      geofenceEvent.identifier.replaceFirst('reminder-', ''),
+    );
+    if (reminderId == null) {
+      return;
+    }
+
+    await geofenceService.triggerReminderById(reminderId);
     return;
   }
 
-  final geofenceEvent = event.event as bg.GeofenceEvent;
-  if (geofenceEvent.action != 'ENTER') {
+  if (event.name == bg.Event.LOCATION || event.name == bg.Event.MOTIONCHANGE) {
+    final location = event.event as bg.Location;
+    await geofenceService.triggerMatchingStoredRemindersAt(
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      useCooldown: true,
+    );
     return;
   }
 
-  final reminderId = int.tryParse(
-    geofenceEvent.identifier.replaceFirst('reminder-', ''),
-  );
-  if (reminderId == null) {
-    return;
+  if (event.name == bg.Event.HEARTBEAT) {
+    final heartbeat = event.event as bg.HeartbeatEvent;
+    await geofenceService.triggerMatchingBestAvailablePosition(
+      fallbackLocation: heartbeat.location,
+      useCooldown: true,
+    );
   }
-
-  await NotificationService.showGeofenceReminder(
-    id: reminderId,
-    title: '到达提醒地点',
-    body: geofenceEvent.extras?['title'] as String? ?? '你有一条位置提醒',
-  );
 }
 
 class GeofenceReminderApp extends StatelessWidget {
@@ -71,6 +87,7 @@ class GeofenceReminderApp extends StatelessWidget {
 
     return MaterialApp(
       title: '临场记',
+      navigatorKey: AppNavigationService.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
