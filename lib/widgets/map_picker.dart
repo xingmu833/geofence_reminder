@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
     as bg;
@@ -33,9 +35,17 @@ class _MapPickerState extends State<MapPicker> {
   BMFMapController? _mapController;
   bool _locationChangedByMap = false;
   bool _mapAlreadyMoved = false;
+  bool _isLocatingCurrentPosition = false;
+  Timer? _overlayRefreshTimer;
 
   BMFCoordinate get _selectedBd09Point =>
       CoordinateTransform.wgs84ToBd09(widget.latitude, widget.longitude);
+
+  @override
+  void dispose() {
+    _overlayRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant MapPicker oldWidget) {
@@ -49,7 +59,7 @@ class _MapPickerState extends State<MapPicker> {
         oldWidget.hasPin != widget.hasPin;
 
     if (overlayChanged) {
-      _refreshOverlays();
+      _scheduleOverlayRefresh();
     }
 
     if (locationChanged && !_locationChangedByMap && !_mapAlreadyMoved) {
@@ -81,6 +91,11 @@ class _MapPickerState extends State<MapPicker> {
   }
 
   Future<void> _locateCurrentPosition() async {
+    if (_isLocatingCurrentPosition) {
+      return;
+    }
+
+    setState(() => _isLocatingCurrentPosition = true);
     try {
       final location = await bg.BackgroundGeolocation.getCurrentPosition(
         samples: 1,
@@ -93,13 +108,6 @@ class _MapPickerState extends State<MapPicker> {
         coords.longitude,
       );
       _selectBd09Point(bd09, moveMap: true);
-
-      await AppFeedbackDialog.show(
-        context,
-        title: '已定位',
-        message: '已将地图选点移动到当前位置。',
-        icon: Icons.my_location,
-      );
     } catch (_) {
       await AppFeedbackDialog.show(
         context,
@@ -107,6 +115,10 @@ class _MapPickerState extends State<MapPicker> {
         message: '请检查定位权限、系统定位开关，或稍后重试。',
         icon: Icons.location_disabled_outlined,
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isLocatingCurrentPosition = false);
+      }
     }
   }
 
@@ -136,7 +148,6 @@ class _MapPickerState extends State<MapPicker> {
       return;
     }
 
-    await controller.cleanAllMarkers();
     await controller.clearOverlays();
     if (!widget.hasPin) {
       return;
@@ -151,6 +162,13 @@ class _MapPickerState extends State<MapPicker> {
         fillColor: const Color(0x332563EB),
       ),
     );
+  }
+
+  void _scheduleOverlayRefresh() {
+    _overlayRefreshTimer?.cancel();
+    _overlayRefreshTimer = Timer(const Duration(milliseconds: 80), () {
+      _refreshOverlays();
+    });
   }
 
   @override
@@ -205,8 +223,16 @@ class _MapPickerState extends State<MapPicker> {
                 child: FloatingActionButton.small(
                   heroTag: 'mapPickerLocate',
                   tooltip: '回到当前位置',
-                  onPressed: _locateCurrentPosition,
-                  child: const Icon(Icons.my_location),
+                  onPressed: _isLocatingCurrentPosition
+                      ? null
+                      : _locateCurrentPosition,
+                  child: _isLocatingCurrentPosition
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.my_location),
                 ),
               ),
             ],

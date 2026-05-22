@@ -6,6 +6,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/reminder.dart';
 import '../models/strong_reminder_payload.dart';
+import '../services/alarm_audio_service.dart';
+import '../services/app_settings_store.dart';
 
 class StrongReminderScreen extends StatefulWidget {
   const StrongReminderScreen({super.key, required this.payload});
@@ -17,11 +19,13 @@ class StrongReminderScreen extends StatefulWidget {
 }
 
 class _StrongReminderScreenState extends State<StrongReminderScreen> {
+  final AlarmAudioService _alarmAudioService = const AlarmAudioService();
   Timer? _pulseTimer;
 
   @override
   void initState() {
     super.initState();
+    _startAlarmSound();
     _pulse();
     _pulseTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pulse());
   }
@@ -29,16 +33,25 @@ class _StrongReminderScreenState extends State<StrongReminderScreen> {
   @override
   void dispose() {
     _pulseTimer?.cancel();
+    unawaited(_alarmAudioService.stop());
     super.dispose();
   }
 
   Future<void> _pulse() async {
-    await SystemSound.play(SystemSoundType.alert);
     await HapticFeedback.heavyImpact();
+  }
+
+  Future<void> _startAlarmSound() async {
+    final settings = await const AppSettingsStore().load();
+    if (!mounted) {
+      return;
+    }
+    await _alarmAudioService.start(settings.alarmSound);
   }
 
   Future<void> _dismiss() async {
     _pulseTimer?.cancel();
+    await _alarmAudioService.stop();
     unawaited(
       FlutterLocalNotificationsPlugin().cancel(
         Reminder.normalizeId(widget.payload.id),

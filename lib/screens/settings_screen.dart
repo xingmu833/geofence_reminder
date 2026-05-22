@@ -174,6 +174,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const AppSettingsSnapshot(
           vibrationEnabled: true,
           repeatReminderEnabled: false,
+          alarmSound: AlarmSoundSetting.defaultValue,
           exportedRulesJson: null,
         );
     final deviceSupportInfo = _deviceSupportInfo;
@@ -290,15 +291,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (value) => _saveSettings(
                   settings.copyWith(repeatReminderEnabled: value),
                 ),
-              ),
-              _ActionTile(
-                icon: Icons.music_note_outlined,
-                title: '铃声与通知渠道',
-                subtitle: '强提醒/通知的铃声、震动等由系统通知渠道管理',
-                status: '系统设置',
-                isGood: true,
-                actionLabel: '打开',
-                onPressed: () => _permissionService.openSystemSettings(),
               ),
               _ActionTile(
                 icon: Icons.notifications_none_outlined,

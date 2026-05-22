@@ -21,11 +21,12 @@ class ReminderCard extends StatelessWidget {
         ? const Color(0xFF60708F)
         : const Color(0xFF9AA8BD);
 
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
+    return RepaintBoundary(
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,6 +125,7 @@ class ReminderCard extends StatelessWidget {
               Switch(value: reminder.isEnabled, onChanged: onToggle),
             ],
           ),
+        ),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/reminder.dart';
 import '../services/geofence_service.dart';
 import '../services/reminder_store.dart';
+import '../widgets/app_feedback_dialog.dart';
 
 class RecycleBinScreen extends StatefulWidget {
   const RecycleBinScreen({super.key});
@@ -52,12 +53,34 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }
 
   Future<void> _restoreAll() async {
+    final confirmed = await AppFeedbackDialog.confirm(
+      context,
+      title: '全部还原',
+      message: '确定要还原回收站中的全部事件吗？',
+      icon: Icons.settings_backup_restore_outlined,
+      confirmLabel: '还原',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     final reminders = await _store.restoreAllTrashReminders();
     await _loadTrash();
     _syncRemindersSilently(reminders);
   }
 
   Future<void> _clearTrash() async {
+    final confirmed = await AppFeedbackDialog.confirm(
+      context,
+      title: '清空回收站',
+      message: '确定要永久删除回收站中的全部事件吗？此操作无法撤销。',
+      icon: Icons.delete_sweep_outlined,
+      confirmLabel: '删除',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _store.clearTrashReminders();
     await _loadTrash();
   }

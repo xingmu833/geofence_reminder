@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/user_profile_store.dart';
+import 'alarm_sound_screen.dart';
 import 'personal_info_screen.dart';
 import 'recycle_bin_screen.dart';
 import 'settings_screen.dart';
@@ -49,6 +50,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).push(MaterialPageRoute(builder: (_) => const RecycleBinScreen()));
   }
 
+  Future<void> _openAlarmSound() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const AlarmSoundScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = _profile;
@@ -86,6 +93,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: '设置',
                     subtitle: '权限、提醒偏好和数据管理',
                     onTap: _openSettings,
+                  ),
+                  const Divider(height: 1, indent: 68),
+                  _ProfileItem(
+                    icon: Icons.music_note_outlined,
+                    title: '闹钟铃声',
+                    subtitle: '选择内置铃声或本地音频',
+                    onTap: _openAlarmSound,
                   ),
                   const Divider(height: 1, indent: 68),
                   _ProfileItem(

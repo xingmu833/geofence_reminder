@@ -40,7 +40,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadReminders();
     _loadPermissionSnapshot();
     _searchController.addListener(() {
-      setState(() => _query = _searchController.text.trim());
+      final nextQuery = _searchController.text.trim();
+      if (nextQuery == _query) {
+        return;
+      }
+      setState(() => _query = nextQuery);
     });
   }
 

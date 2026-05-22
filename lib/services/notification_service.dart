@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/reminder.dart';
 import '../models/strong_reminder_payload.dart';
+import 'alarm_audio_service.dart';
 import 'app_navigation_service.dart';
 import 'app_settings_store.dart';
 
@@ -15,12 +16,26 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static Future<void>? _initializing;
 
   static Future<void> initialize() async {
     if (_initialized) {
       return;
     }
+    final initializing = _initializing;
+    if (initializing != null) {
+      return initializing;
+    }
 
+    _initializing = _initialize();
+    try {
+      await _initializing;
+    } finally {
+      _initializing = null;
+    }
+  }
+
+  static Future<void> _initialize() async {
     const androidSettings = AndroidInitializationSettings('ic_stat_reminder');
     const settings = InitializationSettings(android: androidSettings);
     await _plugin.initialize(
@@ -68,20 +83,22 @@ class NotificationService {
     );
     await android.createNotificationChannel(
       const AndroidNotificationChannel(
-        'geofence_alarm_vibration_v3',
+        'geofence_alarm_vibration_v5',
         '强提醒',
         description: '以高优先级通知提醒到达地点',
         importance: Importance.max,
+        playSound: true,
         enableVibration: true,
         audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
     await android.createNotificationChannel(
       const AndroidNotificationChannel(
-        'geofence_alarm_silent_v3',
+        'geofence_alarm_silent_v5',
         '强提醒（无震动）',
         description: '以高优先级通知提醒到达地点',
         importance: Importance.max,
+        playSound: true,
         enableVibration: false,
         audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
@@ -109,7 +126,7 @@ class NotificationService {
     final channelId = [
       isAlarm ? 'geofence_alarm' : 'geofence_notification',
       settings.vibrationEnabled ? 'vibration' : 'silent',
-      isAlarm ? 'v3' : 'v2',
+      isAlarm ? 'v5' : 'v2',
     ].join('_');
 
     final androidDetails = AndroidNotificationDetails(
@@ -153,6 +170,10 @@ class NotificationService {
       NotificationDetails(android: androidDetails),
       payload: isAlarm ? _encodeStrongReminderPayload(id, title, body) : null,
     );
+
+    if (isAlarm) {
+      await const AlarmAudioService().start(settings.alarmSound);
+    }
 
     if (isAlarm && _shouldOpenStrongReminderInForeground()) {
       AppNavigationService.showStrongReminder(
