@@ -31,6 +31,9 @@
         <meta-data
             android:name="com.baidu.lbsapi.API_KEY"
             android:value="${BAIDU_API_KEY}" />
+        <meta-data
+            android:name="com.transistorsoft.locationmanager.license"
+            android:value="${BACKGROUND_GEOLOCATION_LICENSE}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

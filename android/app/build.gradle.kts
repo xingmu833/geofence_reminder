@@ -56,6 +56,12 @@ val baiduAndroidKey =
         ?: localProperties.getProperty("BAIDU_ANDROID_KEY")
         ?: ""
 
+val backgroundGeolocationLicense =
+    dartDefineValue("BACKGROUND_GEOLOCATION_LICENSE")
+        ?: localProperties.getProperty("backgroundGeolocation.license")
+        ?: localProperties.getProperty("BACKGROUND_GEOLOCATION_LICENSE")
+        ?: ""
+
 if (baiduAndroidKey.isBlank()) {
     throw GradleException(
         "Missing Baidu Android AK. Set baidu.apiKey=your_key in android/local.properties " +
@@ -89,6 +95,8 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["BAIDU_API_KEY"] = baiduAndroidKey
+        manifestPlaceholders["BACKGROUND_GEOLOCATION_LICENSE"] =
+            backgroundGeolocationLicense
     }
 
     signingConfigs {
