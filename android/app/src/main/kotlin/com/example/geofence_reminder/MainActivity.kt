@@ -2,11 +2,14 @@ package com.example.geofence_reminder
 
 import android.content.ComponentName
 import android.content.Intent
-import android.net.Uri
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,6 +17,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channelName = "geofence_reminder/device_settings"
     private val alarmAudioChannelName = "geofence_reminder/alarm_audio"
+    private val geofenceChannelName = "geofence_reminder/geofence"
     private val pickAlarmAudioRequestCode = 9181
     private var alarmMediaPlayer: MediaPlayer? = null
     private var pendingPickAlarmAudioResult: MethodChannel.Result? = null
@@ -56,6 +60,49 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, geofenceChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "syncGeofences" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val reminders = call.arguments as? List<Map<String, Any?>> ?: emptyList()
+                        NativeGeofenceManager.sync(this, reminders)
+                        result.success(null)
+                    }
+                    "removeGeofence" -> {
+                        val id = call.argument<Int>("id")
+                        if (id == null) {
+                            result.error("missing_id", "Missing reminder id", null)
+                        } else {
+                            NativeGeofenceManager.remove(this, id)
+                            result.success(null)
+                        }
+                    }
+                    "getCurrentPosition" -> getCurrentPosition(result)
+                    "showTestAlarm" -> {
+                        val reminder = NativeReminderStore.fromMap(
+                            mapOf<String, Any?>(
+                                "id" to 900003,
+                                "title" to "\u5F3A\u63D0\u9192\u6D4B\u8BD5",
+                                "locationName" to "\u6D4B\u8BD5\u5730\u70B9",
+                                "latitude" to 0.0,
+                                "longitude" to 0.0,
+                                "radiusMeters" to 200,
+                                "isEnabled" to true,
+                                "triggerLimit" to "always",
+                                "dailyTriggerLimit" to 1,
+                                "scheduleLabel" to "",
+                                "alertMode" to "alarm",
+                                "dailyTriggeredCount" to 0,
+                                "isInsideGeofence" to false
+                            )
+                        )
+                        NativeNotificationHelper.showReminder(this, reminder)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onDestroy() {
@@ -93,6 +140,58 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun getCurrentPosition(result: MethodChannel.Result) {
+        val client = LocationServices.getFusedLocationProviderClient(this)
+        val token = CancellationTokenSource()
+        try {
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, token.token)
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        NativeReminderTrigger.scanAt(
+                            this,
+                            location.latitude,
+                            location.longitude,
+                            triggerOnEntry = false
+                        )
+                        result.success(
+                            mapOf(
+                                "latitude" to location.latitude,
+                                "longitude" to location.longitude
+                            )
+                        )
+                    } else {
+                        client.lastLocation
+                            .addOnSuccessListener { last ->
+                                if (last == null) {
+                                    result.error("location_unavailable", "No location available", null)
+                                } else {
+                                    NativeReminderTrigger.scanAt(
+                                        this,
+                                        last.latitude,
+                                        last.longitude,
+                                        triggerOnEntry = false
+                                    )
+                                    result.success(
+                                        mapOf(
+                                            "latitude" to last.latitude,
+                                            "longitude" to last.longitude
+                                        )
+                                    )
+                                }
+                            }
+                            .addOnFailureListener { error ->
+                                result.error("location_failed", error.message, null)
+                            }
+                    }
+                }
+                .addOnFailureListener { error ->
+                    result.error("location_failed", error.message, null)
+                }
+        } catch (error: SecurityException) {
+            result.error("location_permission_denied", error.message, null)
+        }
+    }
+
     private fun startAlarmSound(source: String, id: String, uri: String?) {
         stopAlarmSound()
         alarmMediaPlayer = MediaPlayer().apply {
@@ -124,6 +223,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopAlarmSound() {
+        stopService(Intent(this, AlarmPlaybackService::class.java))
         alarmMediaPlayer?.run {
             try {
                 stop()
@@ -136,7 +236,7 @@ class MainActivity : FlutterActivity() {
 
     private fun pickAlarmAudio(result: MethodChannel.Result) {
         if (pendingPickAlarmAudioResult != null) {
-            result.error("pick_in_progress", "已有音频选择正在进行", null)
+            result.error("pick_in_progress", "Audio picker is already open", null)
             return
         }
 
@@ -162,7 +262,7 @@ class MainActivity : FlutterActivity() {
                 return cursor.getString(nameIndex)
             }
         }
-        return uri.lastPathSegment ?: "本地音频"
+        return uri.lastPathSegment ?: "Local audio"
     }
 
     private fun openVendorPowerSettings(): Boolean {

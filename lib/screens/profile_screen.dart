@@ -7,7 +7,9 @@ import 'recycle_bin_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.onProfileChanged});
+
+  final VoidCallback? onProfileChanged;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -36,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context,
     ).push(MaterialPageRoute(builder: (_) => const PersonalInfoScreen()));
     await _loadProfile();
+    widget.onProfileChanged?.call();
   }
 
   Future<void> _openSettings() async {

@@ -47,19 +47,10 @@ fun dartDefineValue(name: String): String? {
         ?.takeIf { it.isNotBlank() }
 }
 
-val backgroundGeolocation = project(":flutter_background_geolocation")
-apply(from = "${backgroundGeolocation.projectDir}/background_geolocation.gradle")
-
 val baiduAndroidKey =
     dartDefineValue("BAIDU_ANDROID_KEY")
         ?: localProperties.getProperty("baidu.apiKey")
         ?: localProperties.getProperty("BAIDU_ANDROID_KEY")
-        ?: ""
-
-val backgroundGeolocationLicense =
-    dartDefineValue("BACKGROUND_GEOLOCATION_LICENSE")
-        ?: localProperties.getProperty("backgroundGeolocation.license")
-        ?: localProperties.getProperty("BACKGROUND_GEOLOCATION_LICENSE")
         ?: ""
 
 if (baiduAndroidKey.isBlank()) {
@@ -95,8 +86,6 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["BAIDU_API_KEY"] = baiduAndroidKey
-        manifestPlaceholders["BACKGROUND_GEOLOCATION_LICENSE"] =
-            backgroundGeolocationLicense
     }
 
     signingConfigs {
@@ -131,5 +120,6 @@ flutter {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

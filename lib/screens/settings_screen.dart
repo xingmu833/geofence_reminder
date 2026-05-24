@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../models/reminder.dart';
 import '../services/app_settings_store.dart';
 import '../services/geofence_service.dart';
-import '../services/notification_service.dart';
 import '../services/permission_service.dart';
 import '../services/reminder_store.dart';
 import '../widgets/app_feedback_dialog.dart';
@@ -108,36 +106,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       message: '所有提醒规则已删除。',
       icon: Icons.check_circle_outline,
     );
-  }
-
-  Future<void> _sendTestNotification(AlertMode alertMode) async {
-    try {
-      await NotificationService.showGeofenceReminder(
-        id: alertMode == AlertMode.alarm ? 900002 : 900001,
-        title: alertMode == AlertMode.alarm ? '强提醒测试' : '通知提醒测试',
-        body: '如果你看到这条提醒，说明通知链路正常。',
-        alertMode: alertMode,
-      );
-      if (!mounted) {
-        return;
-      }
-      await AppFeedbackDialog.show(
-        context,
-        title: '测试已发送',
-        message: '如果没有看到系统提醒，请检查系统通知权限、通知渠道和勿扰模式。',
-        icon: Icons.notifications_active_outlined,
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      await AppFeedbackDialog.show(
-        context,
-        title: '测试失败',
-        message: '$error',
-        icon: Icons.error_outline,
-      );
-    }
   }
 
   Future<void> _openVendorGuide(DeviceSupportInfo info) async {
@@ -291,24 +259,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (value) => _saveSettings(
                   settings.copyWith(repeatReminderEnabled: value),
                 ),
-              ),
-              _ActionTile(
-                icon: Icons.notifications_none_outlined,
-                title: '测试通知提醒',
-                subtitle: '不经过定位，直接发送一条普通通知',
-                status: '测试',
-                isGood: true,
-                actionLabel: '发送',
-                onPressed: () => _sendTestNotification(AlertMode.notification),
-              ),
-              _ActionTile(
-                icon: Icons.alarm_outlined,
-                title: '测试强提醒',
-                subtitle: '不经过定位，直接发送一条高优先级提醒',
-                status: '测试',
-                isGood: true,
-                actionLabel: '发送',
-                onPressed: () => _sendTestNotification(AlertMode.alarm),
               ),
             ],
           ),

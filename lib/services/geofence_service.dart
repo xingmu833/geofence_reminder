@@ -1,9 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
-
 import '../models/reminder.dart';
+import 'native_geofence_bridge.dart';
 import 'notification_service.dart';
 import 'reminder_store.dart';
 
@@ -30,114 +28,17 @@ class ImmediateTriggerResult {
 class AppGeofenceService {
   const AppGeofenceService();
 
-  static const Duration _scanTriggerCooldown = Duration(minutes: 10);
-  static bool _ready = false;
+  static const Duration _scanTriggerCooldown = Duration(seconds: 30);
+  static const NativeGeofenceBridge _native = NativeGeofenceBridge();
   static bool _isScanningLocation = false;
 
   Future<void> initialize() async {
     await NotificationService.initialize();
-
-    if (_ready) {
-      return;
-    }
-
-    bg.BackgroundGeolocation.onGeofence((bg.GeofenceEvent event) async {
-      final reminderId = _reminderIdFromIdentifier(event.identifier);
-      if (reminderId == null) {
-        return;
-      }
-
-      if (event.action == 'ENTER') {
-        await triggerReminderById(reminderId);
-      } else if (event.action == 'EXIT') {
-        await markReminderOutside(reminderId);
-      }
-    });
-
-    bg.BackgroundGeolocation.onLocation(
-      (bg.Location location) async {
-        await triggerMatchingStoredRemindersAt(
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          useCooldown: true,
-        );
-      },
-      (bg.LocationError error) {},
-    );
-
-    bg.BackgroundGeolocation.onMotionChange((bg.Location location) async {
-      await triggerMatchingStoredRemindersAt(
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        useCooldown: true,
-      );
-    });
-
-    bg.BackgroundGeolocation.onHeartbeat((bg.HeartbeatEvent event) async {
-      await triggerMatchingBestAvailablePosition(
-        fallbackLocation: event.location,
-        useCooldown: true,
-      );
-    });
-
-    final state = await bg.BackgroundGeolocation.ready(
-      bg.Config(
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-        distanceFilter: 25,
-        heartbeatInterval: 60,
-        foregroundService: true,
-        stopOnTerminate: false,
-        startOnBoot: true,
-        enableHeadless: true,
-        geofenceModeHighAccuracy: true,
-        locationAuthorizationRequest: 'Always',
-        backgroundPermissionRationale: bg.PermissionRationale(
-          title: '允许后台定位',
-          message: '临场记需要在后台判断你是否到达提醒地点。',
-          positiveAction: '去设置',
-          negativeAction: '暂不',
-        ),
-        notification: bg.Notification(
-          title: '临场记正在守护位置提醒',
-          text: '到达已设置地点时会提醒你',
-          channelName: '后台位置服务',
-        ),
-        logLevel: bg.Config.LOG_LEVEL_OFF,
-      ),
-    );
-
-    _ready = true;
-    if (!state.enabled) {
-      await bg.BackgroundGeolocation.start();
-    }
   }
 
   Future<void> syncReminders(List<Reminder> reminders) async {
     await initialize();
-    await bg.BackgroundGeolocation.removeGeofences();
-
-    final enabledReminders = reminders.where((item) => item.isEnabled);
-    for (final reminder in enabledReminders) {
-      await bg.BackgroundGeolocation.addGeofence(
-        bg.Geofence(
-          identifier: 'reminder-${reminder.id}',
-          radius: reminder.radiusMeters.toDouble(),
-          latitude: reminder.latitude,
-          longitude: reminder.longitude,
-          notifyOnEntry: true,
-          notifyOnExit: true,
-          extras: {
-            'title': reminder.title,
-            'locationName': reminder.locationName,
-            'alertMode': reminder.alertMode.name,
-          },
-        ),
-      );
-    }
-
-    if (enabledReminders.isNotEmpty) {
-      await bg.BackgroundGeolocation.start();
-    }
+    await _native.syncReminders(reminders);
   }
 
   Future<void> triggerReminderById(int reminderId) async {
@@ -165,7 +66,7 @@ class AppGeofenceService {
     updated[index] = reminder.markTriggered(now);
     await store.saveReminders(updated);
     if (!updated[index].isEnabled) {
-      await bg.BackgroundGeolocation.removeGeofence('reminder-$reminderId');
+      await _native.removeGeofence(reminderId);
     }
   }
 
@@ -211,32 +112,17 @@ class AppGeofenceService {
   }
 
   Future<int> triggerMatchingBestAvailablePosition({
-    bg.Location? fallbackLocation,
     bool useCooldown = true,
   }) async {
     try {
-      final location = await bg.BackgroundGeolocation.getCurrentPosition(
-        samples: 1,
-        timeout: 15,
-        maximumAge: 30000,
-        persist: false,
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-      );
+      final location = await _native.getCurrentPosition();
       return triggerMatchingStoredRemindersAt(
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: location.latitude,
+        longitude: location.longitude,
         useCooldown: useCooldown,
       );
     } catch (_) {
-      final location = fallbackLocation;
-      if (location == null) {
-        return 0;
-      }
-      return triggerMatchingStoredRemindersAt(
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        useCooldown: useCooldown,
-      );
+      return 0;
     }
   }
 
@@ -246,18 +132,11 @@ class AppGeofenceService {
   }) async {
     await initialize();
 
-    final location = await bg.BackgroundGeolocation.getCurrentPosition(
-      samples: 2,
-      timeout: 30,
-      maximumAge: 5000,
-      persist: false,
-      desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-    );
-
+    final location = await _native.getCurrentPosition();
     return _triggerMatchingAt(
       reminders,
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
+      latitude: location.latitude,
+      longitude: location.longitude,
       onlyReminderId: onlyReminderId,
       useCooldown: false,
       triggerOnEntry: false,
@@ -303,7 +182,7 @@ class AppGeofenceService {
           updated[i] = reminder.markInsideGeofence(false);
           stateChangedCount++;
         }
-        blockedReason ??= '当前位置不在提醒半径内';
+        blockedReason ??= 'current_location_outside_radius';
         continue;
       }
 
@@ -312,32 +191,32 @@ class AppGeofenceService {
           updated[i] = reminder.markInsideGeofence(isInside);
           stateChangedCount++;
         }
-        blockedReason ??= '当前位置已在提醒范围内，等待下次从范围外进入时触发';
+        blockedReason ??= 'already_inside_waiting_for_next_entry';
         continue;
       }
 
       if (reminder.isInsideGeofence) {
-        blockedReason ??= '当前位置已在提醒范围内，离开后再次进入才会触发';
+        blockedReason ??= 'already_inside';
         continue;
       }
 
       if (!reminder.isEnabled) {
         updated[i] = reminder.markInsideGeofence(true);
         stateChangedCount++;
-        blockedReason ??= '提醒已暂停';
+        blockedReason ??= 'reminder_paused';
         continue;
       }
       if (!reminder.isScheduleActiveAt(now)) {
         updated[i] = reminder.markInsideGeofence(true);
         stateChangedCount++;
-        blockedReason ??= '当前不在设置的响应时间段内';
+        blockedReason ??= 'outside_schedule';
         continue;
       }
       if (reminder.triggerLimit == TriggerLimit.once &&
           reminder.lastTriggeredAt != null) {
         updated[i] = reminder.markInsideGeofence(true);
         stateChangedCount++;
-        blockedReason ??= '此提醒已经触发过';
+        blockedReason ??= 'already_triggered_once';
         continue;
       }
       if (reminder.triggerLimit == TriggerLimit.daily &&
@@ -346,7 +225,7 @@ class AppGeofenceService {
           reminder.dailyTriggeredCount >= reminder.dailyTriggerLimit) {
         updated[i] = reminder.markInsideGeofence(true);
         stateChangedCount++;
-        blockedReason ??= '此提醒今天已经达到触发次数';
+        blockedReason ??= 'daily_limit_reached';
         continue;
       }
       if (useCooldown &&
@@ -354,7 +233,7 @@ class AppGeofenceService {
           now.difference(reminder.lastTriggeredAt!) < _scanTriggerCooldown) {
         updated[i] = reminder.markInsideGeofence(true);
         stateChangedCount++;
-        blockedReason ??= '提醒刚刚触发过';
+        blockedReason ??= 'cooldown';
         continue;
       }
 
@@ -373,10 +252,6 @@ class AppGeofenceService {
     );
   }
 
-  static int? _reminderIdFromIdentifier(String identifier) {
-    return int.tryParse(identifier.replaceFirst('reminder-', ''));
-  }
-
   Future<void> _removePausedTriggeredGeofences(
     List<Reminder> updated,
     List<Reminder> previous,
@@ -387,7 +262,7 @@ class AppGeofenceService {
         orElse: () => reminder,
       );
       if (old.isEnabled && !reminder.isEnabled) {
-        await bg.BackgroundGeolocation.removeGeofence('reminder-${reminder.id}');
+        await _native.removeGeofence(reminder.id);
       }
     }
   }

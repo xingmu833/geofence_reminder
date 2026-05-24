@@ -3,9 +3,6 @@ allprojects {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("${project(":flutter_background_geolocation").projectDir}/libs") }
-        maven { url = uri("${project(":background_fetch").projectDir}/libs") }
-        maven { url = uri("https://developer.huawei.com/repo/") }
         google()
         mavenCentral()
     }

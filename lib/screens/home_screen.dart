@@ -6,12 +6,14 @@ import '../models/reminder.dart';
 import '../services/geofence_service.dart';
 import '../services/permission_service.dart';
 import '../services/reminder_store.dart';
+import '../services/user_profile_store.dart';
 import '../widgets/app_feedback_dialog.dart';
 import '../widgets/permission_banner.dart';
 import '../widgets/reminder_card.dart';
 import 'profile_screen.dart';
 import 'reminder_editor_screen.dart';
 import 'settings_screen.dart';
+import 'test_screen.dart';
 
 enum _ReminderFilter { all, active, paused }
 
@@ -26,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final AppGeofenceService _geofenceService = const AppGeofenceService();
   final AppPermissionService _permissionService = const AppPermissionService();
   final ReminderStore _store = const ReminderStore();
+  final UserProfileStore _profileStore = const UserProfileStore();
   final TextEditingController _searchController = TextEditingController();
   List<Reminder> _reminders = const [];
   AppPermissionSnapshot? _permissionSnapshot;
@@ -33,12 +36,14 @@ class _HomeScreenState extends State<HomeScreen> {
   _ReminderFilter _filter = _ReminderFilter.all;
   int _selectedIndex = 0;
   bool _isLoading = true;
+  bool _showTestTab = false;
 
   @override
   void initState() {
     super.initState();
     _loadReminders();
     _loadPermissionSnapshot();
+    _loadTestAccess();
     _searchController.addListener(() {
       final nextQuery = _searchController.text.trim();
       if (nextQuery == _query) {
@@ -78,6 +83,23 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() => _permissionSnapshot = snapshot);
+  }
+
+  Future<void> _loadTestAccess() async {
+    final profile = await _profileStore.load();
+    final nextShowTestTab =
+        profile.isLoggedIn &&
+        profile.phone == '11111111111' &&
+        profile.password == '123456c';
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _showTestTab = nextShowTestTab;
+      if (!nextShowTestTab && _selectedIndex > 1) {
+        _selectedIndex = 1;
+      }
+    });
   }
 
   Future<int> _saveReminders({
@@ -205,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
     await _loadPermissionSnapshot();
     await _loadReminders();
+    await _loadTestAccess();
   }
 
   void _selectTab(int index) {
@@ -212,6 +235,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (index == 0) {
       _loadPermissionSnapshot();
       _loadReminders();
+    } else if (index == 1) {
+      _loadTestAccess();
     }
   }
 
@@ -334,21 +359,31 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   )
-          : const ProfileScreen(),
+          : _selectedIndex == 1
+          ? ProfileScreen(onProfileChanged: _loadTestAccess)
+          : const TestScreen(),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: _selectedIndex > (_showTestTab ? 2 : 1)
+            ? 1
+            : _selectedIndex,
         onDestinationSelected: _selectTab,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: '事件',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '个人',
           ),
+          if (_showTestTab)
+            const NavigationDestination(
+              icon: Icon(Icons.science_outlined),
+              selectedIcon: Icon(Icons.science),
+              label: '测试',
+            ),
         ],
       ),
       floatingActionButton: _selectedIndex == 0

@@ -1,6 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
 
 import 'app_settings_store.dart';
 
@@ -22,11 +20,7 @@ class AlarmAudioService {
     try {
       await _channel.invokeMethod<void>('startAlarmSound', sound.toMap());
     } catch (_) {
-      try {
-        await bg.BackgroundGeolocation.playSound('BEEP_ON');
-      } catch (_) {
-        await SystemSound.play(SystemSoundType.alert);
-      }
+      await SystemSound.play(SystemSoundType.alert);
     }
   }
 
@@ -47,6 +41,6 @@ class AlarmAudioService {
     if (uri == null || uri.isEmpty) {
       return null;
     }
-    return PickedAlarmAudio(name: result['name'] ?? '本地音频', uri: uri);
+    return PickedAlarmAudio(name: result['name'] ?? 'Local audio', uri: uri);
   }
 }

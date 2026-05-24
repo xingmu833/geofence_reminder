@@ -1,11 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
 import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
 
+import '../services/native_geofence_bridge.dart';
 import '../utils/coordinate_transform.dart';
 import 'app_feedback_dialog.dart';
 
@@ -37,6 +36,7 @@ class _MapPickerState extends State<MapPicker> {
   bool _mapAlreadyMoved = false;
   bool _isLocatingCurrentPosition = false;
   Timer? _overlayRefreshTimer;
+  final NativeGeofenceBridge _nativeGeofence = const NativeGeofenceBridge();
 
   BMFCoordinate get _selectedBd09Point =>
       CoordinateTransform.wgs84ToBd09(widget.latitude, widget.longitude);
@@ -97,12 +97,7 @@ class _MapPickerState extends State<MapPicker> {
 
     setState(() => _isLocatingCurrentPosition = true);
     try {
-      final location = await bg.BackgroundGeolocation.getCurrentPosition(
-        samples: 1,
-        timeout: 12,
-        persist: false,
-      );
-      final coords = location.coords;
+      final coords = await _nativeGeofence.getCurrentPosition();
       final bd09 = CoordinateTransform.wgs84ToBd09(
         coords.latitude,
         coords.longitude,

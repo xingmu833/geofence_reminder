@@ -1,21 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
 import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
 
 import 'screens/home_screen.dart';
 import 'services/app_navigation_service.dart';
-import 'services/geofence_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _initializeBaiduMap();
-  bg.BackgroundGeolocation.registerHeadlessTask(
-    backgroundGeolocationHeadlessTask,
-  );
   runApp(const GeofenceReminderApp());
 }
 
@@ -36,46 +30,6 @@ Future<void> _initializeBaiduMap() async {
   }
 }
 
-@pragma('vm:entry-point')
-void backgroundGeolocationHeadlessTask(bg.HeadlessEvent event) async {
-  final geofenceService = const AppGeofenceService();
-
-  if (event.name == bg.Event.GEOFENCE) {
-    final geofenceEvent = event.event as bg.GeofenceEvent;
-    if (geofenceEvent.action != 'ENTER') {
-      return;
-    }
-
-    final reminderId = int.tryParse(
-      geofenceEvent.identifier.replaceFirst('reminder-', ''),
-    );
-    if (reminderId == null) {
-      return;
-    }
-
-    await geofenceService.triggerReminderById(reminderId);
-    return;
-  }
-
-  if (event.name == bg.Event.LOCATION || event.name == bg.Event.MOTIONCHANGE) {
-    final location = event.event as bg.Location;
-    await geofenceService.triggerMatchingStoredRemindersAt(
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      useCooldown: true,
-    );
-    return;
-  }
-
-  if (event.name == bg.Event.HEARTBEAT) {
-    final heartbeat = event.event as bg.HeartbeatEvent;
-    await geofenceService.triggerMatchingBestAvailablePosition(
-      fallbackLocation: heartbeat.location,
-      useCooldown: true,
-    );
-  }
-}
-
 class GeofenceReminderApp extends StatelessWidget {
   const GeofenceReminderApp({super.key});
 
@@ -86,7 +40,7 @@ class GeofenceReminderApp extends StatelessWidget {
     const outline = Color(0xFFD8E3F8);
 
     return MaterialApp(
-      title: '临场记',
+      title: 'LinChangJi',
       navigatorKey: AppNavigationService.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
