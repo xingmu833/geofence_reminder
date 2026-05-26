@@ -13,7 +13,11 @@ object NativeGeofenceManager {
     private const val geofenceResponsivenessMillis = 10_000
 
     fun sync(context: Context, reminderMaps: List<Map<String, Any?>>) {
-        val reminders = reminderMaps.map { NativeReminderStore.fromMap(it) }
+        val previousById = NativeReminderStore.load(context).associateBy { it.id }
+        val reminders = reminderMaps.map { map ->
+            val next = NativeReminderStore.fromMap(map)
+            mergeRuntimeState(previousById[next.id], next)
+        }
         NativeReminderStore.saveSnapshot(context, reminders)
         val client = LocationServices.getGeofencingClient(context)
         if (reminders.isEmpty()) {
@@ -90,6 +94,57 @@ object NativeGeofenceManager {
             reminder.json.optString(key)
         } else {
             null
+        }
+    }
+
+    private fun mergeRuntimeState(previous: NativeReminder?, next: NativeReminder): NativeReminder {
+        if (previous == null || !isSameFence(previous, next)) {
+            return next
+        }
+
+        val merged = next.json
+        if (previous.triggerLimit == "once" && previous.lastTriggeredAt != null) {
+            merged.put("isEnabled", false)
+        }
+        if (previous.isInsideGeofence) {
+            merged.put("isInsideGeofence", true)
+        }
+        copyRuntimeStringIfNewer(previous, next, "lastTriggeredAt")
+        copyRuntimeString(previous, next, "lastTriggeredLabel")
+        copyRuntimeStringIfNewer(previous, next, "dailyTriggerDate")
+        if (previous.dailyTriggeredCount > next.dailyTriggeredCount) {
+            merged.put("dailyTriggeredCount", previous.dailyTriggeredCount)
+        }
+        return NativeReminderStore.fromJson(merged)
+    }
+
+    private fun isSameFence(a: NativeReminder, b: NativeReminder): Boolean {
+        return a.latitude == b.latitude &&
+            a.longitude == b.longitude &&
+            a.radiusMeters == b.radiusMeters
+    }
+
+    private fun copyRuntimeString(previous: NativeReminder, next: NativeReminder, key: String) {
+        if (!previous.json.has(key) || previous.json.isNull(key)) {
+            return
+        }
+        if (!next.json.has(key) || next.json.isNull(key) || next.json.optString(key).isBlank()) {
+            next.json.put(key, previous.json.optString(key))
+        }
+    }
+
+    private fun copyRuntimeStringIfNewer(previous: NativeReminder, next: NativeReminder, key: String) {
+        if (!previous.json.has(key) || previous.json.isNull(key)) {
+            return
+        }
+        val previousValue = previous.json.optString(key)
+        val nextValue = if (next.json.has(key) && !next.json.isNull(key)) {
+            next.json.optString(key)
+        } else {
+            ""
+        }
+        if (nextValue.isBlank() || previousValue > nextValue) {
+            next.json.put(key, previousValue)
         }
     }
 

@@ -6,6 +6,7 @@ import java.util.Date
 
 object NativeReminderTrigger {
     private const val scanTriggerCooldownMillis = 30 * 1000L
+    private const val exitHysteresisMeters = 30f
 
     fun triggerById(context: Context, reminderId: Int) {
         val reminders = NativeReminderStore.load(context)
@@ -13,7 +14,10 @@ object NativeReminderTrigger {
         if (index == -1) {
             return
         }
-        if (reminders[index].isInsideGeofence) {
+        if (
+            reminders[index].isInsideGeofence ||
+            (reminders[index].triggerLimit == "once" && reminders[index].lastTriggeredAt != null)
+        ) {
             return
         }
         triggerIndex(context, reminders, index)
@@ -51,7 +55,8 @@ object NativeReminderTrigger {
             )
             val isInside = distance <= reminder.radiusMeters
             if (!isInside) {
-                if (reminder.isInsideGeofence) {
+                val isClearlyOutside = distance > reminder.radiusMeters + exitHysteresisMeters
+                if (reminder.isInsideGeofence && isClearlyOutside) {
                     reminders[index] = NativeReminderStore.markInside(reminder, false)
                     changed = true
                 }

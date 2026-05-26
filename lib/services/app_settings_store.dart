@@ -79,7 +79,7 @@ class AlarmSoundSetting {
       'source': source.name,
       'id': id,
       'name': name,
-      if (uri != null) 'uri': uri!,
+      'uri': ?uri,
     };
   }
 

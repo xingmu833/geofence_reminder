@@ -34,10 +34,23 @@ class ReminderStore {
       final withoutDemoReminders = reminders
           .where((item) => !_demoReminderIds.contains(item.id))
           .toList();
-      if (withoutDemoReminders.length != reminders.length) {
-        await saveReminders(withoutDemoReminders);
+      final normalizedReminders = withoutDemoReminders
+          .map(
+            (item) => item.triggerLimit == TriggerLimit.once &&
+                    item.lastTriggeredAt != null &&
+                    item.isEnabled
+                ? item.copyWith(isEnabled: false)
+                : item,
+          )
+          .toList();
+      if (normalizedReminders.length != reminders.length ||
+          normalizedReminders.asMap().entries.any((entry) {
+            final original = withoutDemoReminders[entry.key];
+            return original.isEnabled != entry.value.isEnabled;
+          })) {
+        await saveReminders(normalizedReminders);
       }
-      return withoutDemoReminders;
+      return normalizedReminders;
     } catch (_) {
       return const [];
     }

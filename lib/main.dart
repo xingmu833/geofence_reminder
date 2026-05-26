@@ -36,7 +36,7 @@ class GeofenceReminderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF2563EB);
-    const background = Color(0xFFF5F8FF);
+    const background = Color(0xFFF6F9FF);
     const outline = Color(0xFFD8E3F8);
 
     return MaterialApp(
@@ -53,24 +53,25 @@ class GeofenceReminderApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: background,
+          backgroundColor: Colors.transparent,
           foregroundColor: Color(0xFF10203F),
           elevation: 0,
           centerTitle: false,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          indicatorColor: const Color(0xFFE4ECFF),
+          backgroundColor: Colors.transparent,
+          indicatorColor: const Color(0xFFDDEAFF),
           labelTextStyle: WidgetStateProperty.all(
             const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
         cardTheme: CardThemeData(
           color: Colors.white,
-          elevation: 0.5,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: outline),
           ),
         ),

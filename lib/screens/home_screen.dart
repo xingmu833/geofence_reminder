@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -242,17 +243,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final activeCount = _reminders.where((item) => item.isEnabled).length;
-    final pausedCount = _reminders.length - activeCount;
+    final selectedTab = _selectedIndex > (_showTestTab ? 2 : 1)
+        ? 1
+        : _selectedIndex;
 
     return Scaffold(
-      body: _selectedIndex == 0
-          ? _isLoading
-                ? const SafeArea(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : SafeArea(
-                    child: CustomScrollView(
+      extendBody: true,
+      body: Stack(
+        children: [
+          const _SpatialBackdrop(),
+          Positioned.fill(
+            child: _selectedIndex == 0
+                ? _isLoading
+                      ? const SafeArea(
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : SafeArea(
+                          child: CustomScrollView(
                       slivers: [
                         SliverToBoxAdapter(
                           child: Padding(
@@ -280,13 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ],
                                 const SizedBox(height: 14),
-                                _StatusStrip(
-                                  activeCount: activeCount,
-                                  pausedCount: pausedCount,
-                                  totalCount: _reminders.length,
-                                ),
-                                const SizedBox(height: 14),
-                                _FilterBar(
+                                _PrettyFilterBar(
                                   value: _filter,
                                   onChanged: (value) =>
                                       setState(() => _filter = value),
@@ -311,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           )
                         else
                           SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 124),
                             sliver: SliverList.separated(
                               itemCount: _visibleReminders.length,
                               separatorBuilder: (_, _) =>
@@ -357,15 +358,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                       ],
-                    ),
-                  )
-          : _selectedIndex == 1
-          ? ProfileScreen(onProfileChanged: _loadTestAccess)
-          : const TestScreen(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex > (_showTestTab ? 2 : 1)
-            ? 1
-            : _selectedIndex,
+                          ),
+                        )
+                : _selectedIndex == 1
+                ? ProfileScreen(onProfileChanged: _loadTestAccess)
+                : const TestScreen(),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _GlassNavigationBar(
+        selectedIndex: selectedTab,
         onDestinationSelected: _selectTab,
         destinations: [
           const NavigationDestination(
@@ -397,6 +399,173 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _SpatialBackdrop extends StatelessWidget {
+  const _SpatialBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF7FAFF), Color(0xFFEFF7F4), Color(0xFFFFFBF3)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: 88,
+              right: -46,
+              child: Transform.rotate(
+                angle: -0.22,
+                child: _DepthPlane(
+                  width: 180,
+                  height: 96,
+                  color: Color(0x3338BDF8),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 186,
+              right: 64,
+              child: Transform.rotate(
+                angle: 0.34,
+                child: _DepthPlane(
+                  width: 88,
+                  height: 88,
+                  color: Color(0x1A2563EB),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 312,
+              left: -58,
+              child: Transform.rotate(
+                angle: 0.2,
+                child: _DepthPlane(
+                  width: 190,
+                  height: 112,
+                  color: Color(0x24F59E0B),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 254,
+              left: 48,
+              child: Transform.rotate(
+                angle: -0.36,
+                child: _DepthPlane(
+                  width: 96,
+                  height: 54,
+                  color: Color(0x1A7C3AED),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 108,
+              right: 22,
+              child: Transform.rotate(
+                angle: 0.16,
+                child: _DepthPlane(
+                  width: 132,
+                  height: 72,
+                  color: Color(0x1F10B981),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DepthPlane extends StatelessWidget {
+  const _DepthPlane({
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+
+  final double width;
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.58)),
+      ),
+    );
+  }
+}
+
+class _GlassNavigationBar extends StatelessWidget {
+  const _GlassNavigationBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    required this.destinations,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+  final List<Widget> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(46, 0, 46, 22),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(40),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.66),
+                  Colors.white.withValues(alpha: 0.38),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.78)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x2A10203F),
+                  blurRadius: 28,
+                  offset: Offset(0, 16),
+                ),
+                BoxShadow(
+                  color: Color(0x22FFFFFF),
+                  blurRadius: 8,
+                  offset: Offset(0, -2),
+                ),
+              ],
+            ),
+            child: NavigationBar(
+              height: 62,
+              elevation: 0,
+              selectedIndex: selectedIndex,
+              backgroundColor: Colors.transparent,
+              onDestinationSelected: onDestinationSelected,
+              destinations: destinations,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({required this.onAdd, required this.onProfile});
 
@@ -408,23 +577,39 @@ class _HomeHeader extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 14, 18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x332563EB),
-            blurRadius: 22,
-            offset: Offset(0, 12),
+            color: Color(0x302563EB),
+            blurRadius: 30,
+            offset: Offset(0, 18),
+          ),
+          BoxShadow(
+            color: Color(0x16F59E0B),
+            blurRadius: 18,
+            offset: Offset(-8, 8),
           ),
         ],
       ),
-      child: Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Stack(
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 18, 14, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1D4ED8),
+                    Color(0xFF2563EB),
+                    Color(0xFF0F766E),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
         children: [
           Expanded(
             child: Column(
@@ -467,6 +652,28 @@ class _HomeHeader extends StatelessWidget {
             icon: const Icon(Icons.add),
           ),
         ],
+              ),
+            ),
+            Positioned(
+              right: 18,
+              top: -26,
+              child: Transform.rotate(
+                angle: -0.2,
+                child: Container(
+                  width: 108,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.22),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -532,14 +739,18 @@ class _StatusTile extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 74),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD8E3F8)),
+        gradient: const LinearGradient(
+          colors: [Colors.white, Color(0xFFF8FBFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0F2563EB),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+            color: Color(0x162563EB),
+            blurRadius: 20,
+            offset: Offset(0, 10),
           ),
         ],
       ),
@@ -578,6 +789,118 @@ class _StatusTile extends StatelessWidget {
             ).textTheme.bodySmall?.copyWith(color: const Color(0xFF60708F)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PrettyFilterBar extends StatelessWidget {
+  const _PrettyFilterBar({required this.value, required this.onChanged});
+
+  final _ReminderFilter value;
+  final ValueChanged<_ReminderFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x142563EB),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _FilterChipButton(
+            selected: value == _ReminderFilter.all,
+            icon: Icons.inbox_outlined,
+            label: '全部',
+            onTap: () => onChanged(_ReminderFilter.all),
+          ),
+          _FilterChipButton(
+            selected: value == _ReminderFilter.active,
+            icon: Icons.notifications_active_outlined,
+            label: '生效',
+            onTap: () => onChanged(_ReminderFilter.active),
+          ),
+          _FilterChipButton(
+            selected: value == _ReminderFilter.paused,
+            icon: Icons.pause_circle_outline,
+            label: '暂停',
+            onTap: () => onChanged(_ReminderFilter.paused),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChipButton extends StatelessWidget {
+  const _FilterChipButton({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected
+        ? Theme.of(context).colorScheme.primary
+        : const Color(0xFF60708F);
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 42,
+          decoration: BoxDecoration(
+            gradient: selected
+                ? const LinearGradient(
+                    colors: [Color(0xFFEAF1FF), Color(0xFFF0FBF8)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x1C2563EB),
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

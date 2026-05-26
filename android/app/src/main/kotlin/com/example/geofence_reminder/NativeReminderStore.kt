@@ -70,6 +70,10 @@ object NativeReminderStore {
             .edit()
             .putString(nativeRemindersKey, raw)
             .apply()
+        context.getSharedPreferences(flutterPrefsName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(flutterRemindersKey, raw)
+            .apply()
     }
 
     fun fromMap(map: Map<String, Any?>): NativeReminder {

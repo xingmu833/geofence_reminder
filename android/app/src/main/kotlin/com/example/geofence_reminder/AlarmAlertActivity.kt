@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -17,6 +18,7 @@ import android.widget.TextView
 class AlarmAlertActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
         showOverLockScreen()
 
         val reminderId = intent.getIntExtra(EXTRA_REMINDER_ID, 0)
