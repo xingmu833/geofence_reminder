@@ -6,10 +6,12 @@ import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
 
 import 'screens/home_screen.dart';
 import 'services/app_navigation_service.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _initializeBaiduMap();
+  await NotificationService.initialize();
   runApp(const GeofenceReminderApp());
 }
 

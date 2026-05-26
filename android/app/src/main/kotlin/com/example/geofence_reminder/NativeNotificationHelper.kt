@@ -36,13 +36,13 @@ object NativeNotificationHelper {
             .setOngoing(isAlarm)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(
-                if (isAlarm) alarmAlertPendingIntent(context, reminder) else openAppPendingIntent(context, reminder.id)
+                if (isAlarm) strongReminderPendingIntent(context, reminder) else openAppPendingIntent(context, reminder.id)
             )
 
         if (isAlarm) {
             builder.setCategory(Notification.CATEGORY_ALARM)
                 .setPriority(Notification.PRIORITY_MAX)
-                .setFullScreenIntent(alarmAlertPendingIntent(context, reminder), true)
+                .setFullScreenIntent(strongReminderPendingIntent(context, reminder), true)
             startAlarmService(context, reminder)
         } else {
             builder.setCategory(Notification.CATEGORY_REMINDER)
@@ -56,22 +56,33 @@ object NativeNotificationHelper {
         }
     }
 
-    fun buildAlarmServiceNotification(context: Context): Notification {
+    fun buildAlarmServiceNotification(context: Context, sourceIntent: Intent? = null): Notification {
         ensureChannels(context)
-        val stopIntent = Intent(context, AlarmPlaybackService::class.java).apply {
-            action = AlarmPlaybackService.ACTION_STOP
+        val contentPendingIntent = if (sourceIntent?.hasExtra("reminderId") == true) {
+            val reminderId = sourceIntent.getIntExtra("reminderId", 0)
+            val title = sourceIntent.getStringExtra("title") ?: "\u5F3A\u63D0\u9192"
+            val body = sourceIntent.getStringExtra("location") ?: ""
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("strongReminderId", reminderId)
+                putExtra("strongReminderTitle", title)
+                putExtra("strongReminderBody", body)
+            }
+            PendingIntent.getActivity(context, 2002, intent, PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag())
+        } else {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            PendingIntent.getActivity(context, 2002, intent, PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag())
         }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag()
-        val stopPendingIntent = PendingIntent.getService(context, 2002, stopIntent, flags)
         return notificationBuilder(context, alarmChannelId)
             .setSmallIcon(R.drawable.ic_stat_reminder)
             .setContentTitle("\u5F3A\u63D0\u9192\u54CD\u94C3\u4E2D")
-            .setContentText("\u70B9\u51FB\u505C\u6B62\u63D0\u9192")
+            .setContentText("\u70B9\u51FB\u6253\u5F00\u63D0\u9192\u9875\u9762")
             .setPriority(Notification.PRIORITY_MAX)
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
-            .setContentIntent(stopPendingIntent)
-            .addAction(0, "\u505C\u6B62", stopPendingIntent)
+            .setContentIntent(contentPendingIntent)
             .build()
     }
 
@@ -153,12 +164,25 @@ object NativeNotificationHelper {
         return PendingIntent.getActivity(context, 10_000 + reminder.id, intent, flags)
     }
 
+    private fun strongReminderPendingIntent(context: Context, reminder: NativeReminder): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("strongReminderId", reminder.id)
+            putExtra("strongReminderTitle", "\u5230\u8FBE\u63D0\u9192\u5730\u70B9")
+            putExtra("strongReminderBody", reminder.title)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or immutableFlag()
+        return PendingIntent.getActivity(context, 20_000 + reminder.id, intent, flags)
+    }
+
     private fun startAlarmService(context: Context, reminder: NativeReminder) {
         val intent = Intent(context, AlarmPlaybackService::class.java).apply {
             putExtra("source", readAlarmSoundSource(context))
             putExtra("id", readAlarmSoundId(context))
             putExtra("uri", readAlarmSoundUri(context))
             putExtra("reminderId", reminder.id)
+            putExtra("title", "\u5F3A\u63D0\u9192")
+            putExtra("location", reminder.title)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

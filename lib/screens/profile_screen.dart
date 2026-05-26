@@ -6,6 +6,7 @@ import '../services/user_profile_store.dart';
 import 'alarm_sound_screen.dart';
 import 'personal_info_screen.dart';
 import 'recycle_bin_screen.dart';
+import 'reminder_page_diy_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -56,30 +57,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _openPersonalInfo() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PersonalInfoScreen()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PersonalInfoScreen()),
+    );
     await _load();
     widget.onProfileChanged?.call();
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-  }
-
-  Future<void> _openRecycleBin() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const RecycleBinScreen()));
-    await _load();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
   }
 
   Future<void> _openAlarmSound() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const AlarmSoundScreen()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AlarmSoundScreen()),
+    );
+  }
+
+  Future<void> _openReminderPageDiy() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ReminderPageDiyScreen()),
+    );
+  }
+
+  Future<void> _openRecycleBin() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const RecycleBinScreen()),
+    );
+    await _load();
   }
 
   @override
@@ -87,7 +94,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profile = _profile;
     final isLoggedIn = profile?.isLoggedIn == true;
     final name = isLoggedIn ? profile!.displayName : '点击登录';
-    final identifier = isLoggedIn ? profile!.identifier : '登录或注册后管理个人资料';
+    final identifier = isLoggedIn
+        ? profile!.identifier
+        : '登录或注册后管理个人资料';
     final avatar =
         _avatars[(profile?.avatarIndex ?? 0).clamp(0, _avatars.length - 1).toInt()];
     final totalCount = _reminders.length;
@@ -141,6 +150,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: '闹钟铃声',
                       subtitle: '选择内置铃声或本地音频',
                       onTap: _openAlarmSound,
+                    ),
+                    _ProfileItem(
+                      icon: Icons.palette_outlined,
+                      title: '提醒页面DIY',
+                      subtitle: '上传并预览强提醒页面的自定义图片',
+                      onTap: _openReminderPageDiy,
                     ),
                     _ProfileItem(
                       icon: Icons.delete_outline,
@@ -220,9 +235,9 @@ class _ProfileHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -304,7 +319,7 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 104,
+      height: 112,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.82),
@@ -320,18 +335,23 @@ class _StatTile extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Icon(icon, color: color, size: 18),
-          Text(
-            '$value',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF10203F),
-              height: 1,
-              fontSize: 27,
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '$value',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF10203F),
+                    height: 1,
+                    fontSize: 27,
+                  ),
             ),
           ),
+          const Spacer(),
           Text(
             label,
             maxLines: 1,

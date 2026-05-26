@@ -1,6 +1,7 @@
 package com.example.geofence_reminder
 
 import android.content.ComponentName
+import android.app.NotificationManager
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -18,9 +19,15 @@ class MainActivity : FlutterActivity() {
     private val channelName = "geofence_reminder/device_settings"
     private val alarmAudioChannelName = "geofence_reminder/alarm_audio"
     private val geofenceChannelName = "geofence_reminder/geofence"
+    private val strongReminderLaunchChannelName = "geofence_reminder/strong_reminder_launch"
+    private val strongReminderVisualChannelName = "geofence_reminder/strong_reminder_visual"
     private val pickAlarmAudioRequestCode = 9181
+    private val pickStrongReminderVisualRequestCode = 9182
     private var alarmMediaPlayer: MediaPlayer? = null
     private var pendingPickAlarmAudioResult: MethodChannel.Result? = null
+    private var pendingPickStrongReminderVisualResult: MethodChannel.Result? = null
+    private var strongReminderLaunchChannel: MethodChannel? = null
+    private var activeStrongReminderId: Int? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -103,6 +110,42 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, strongReminderVisualChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "pickStrongReminderVisualImage" -> pickStrongReminderVisualImage(result)
+                    "loadStrongReminderVisualImageBytes" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri.isNullOrBlank()) {
+                            result.error("missing_uri", "Missing image uri", null)
+                        } else {
+                            loadStrongReminderVisualImageBytes(uri, result)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        strongReminderLaunchChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            strongReminderLaunchChannelName
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "consumeInitialStrongReminder" -> {
+                        result.success(consumeStrongReminderExtras(intent))
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeStrongReminderExtras(intent)?.let { payload ->
+            strongReminderLaunchChannel?.invokeMethod("showStrongReminder", payload)
+        }
     }
 
     override fun onDestroy() {
@@ -112,32 +155,56 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != pickAlarmAudioRequestCode) {
-            return
-        }
+        when (requestCode) {
+            pickAlarmAudioRequestCode -> {
+                val result = pendingPickAlarmAudioResult ?: return
+                pendingPickAlarmAudioResult = null
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) {
+                    result.success(null)
+                    return
+                }
 
-        val result = pendingPickAlarmAudioResult ?: return
-        pendingPickAlarmAudioResult = null
-        val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) {
-            result.success(null)
-            return
-        }
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                }
 
-        try {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        } catch (_: Exception) {
-        }
+                result.success(
+                    mapOf(
+                        "name" to resolveDisplayName(uri),
+                        "uri" to uri.toString()
+                    )
+                )
+            }
+            pickStrongReminderVisualRequestCode -> {
+                val result = pendingPickStrongReminderVisualResult ?: return
+                pendingPickStrongReminderVisualResult = null
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) {
+                    result.success(null)
+                    return
+                }
 
-        result.success(
-            mapOf(
-                "name" to resolveDisplayName(uri),
-                "uri" to uri.toString()
-            )
-        )
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                }
+
+                result.success(
+                    mapOf(
+                        "name" to resolveDisplayName(uri),
+                        "uri" to uri.toString()
+                    )
+                )
+            }
+        }
     }
 
     private fun getCurrentPosition(result: MethodChannel.Result) {
@@ -232,6 +299,12 @@ class MainActivity : FlutterActivity() {
             release()
         }
         alarmMediaPlayer = null
+        activeStrongReminderId?.let {
+            getSystemService(NotificationManager::class.java)?.cancel(
+                NativeNotificationHelper.notificationId(it)
+            )
+        }
+        activeStrongReminderId = null
     }
 
     private fun pickAlarmAudio(result: MethodChannel.Result) {
@@ -252,6 +325,43 @@ class MainActivity : FlutterActivity() {
         } catch (error: Exception) {
             pendingPickAlarmAudioResult = null
             result.error("pick_failed", error.message, null)
+        }
+    }
+
+    private fun pickStrongReminderVisualImage(result: MethodChannel.Result) {
+        if (pendingPickStrongReminderVisualResult != null) {
+            result.error("pick_in_progress", "Image picker is already open", null)
+            return
+        }
+
+        pendingPickStrongReminderVisualResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, pickStrongReminderVisualRequestCode)
+        } catch (error: Exception) {
+            pendingPickStrongReminderVisualResult = null
+            result.error("pick_failed", error.message, null)
+        }
+    }
+
+    private fun loadStrongReminderVisualImageBytes(
+        uriString: String,
+        result: MethodChannel.Result
+    ) {
+        try {
+            val uri = Uri.parse(uriString)
+            contentResolver.openInputStream(uri)?.use { input ->
+                result.success(input.readBytes())
+                return
+            }
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("load_failed", error.message, null)
         }
     }
 
@@ -309,5 +419,21 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun consumeStrongReminderExtras(intent: Intent?): Map<String, Any?>? {
+        if (intent == null || !intent.hasExtra("strongReminderId")) {
+            return null
+        }
+        activeStrongReminderId = intent.getIntExtra("strongReminderId", 0)
+        val payload = mapOf(
+            "id" to activeStrongReminderId,
+            "title" to (intent.getStringExtra("strongReminderTitle") ?: "\u5F3A\u63D0\u9192"),
+            "body" to (intent.getStringExtra("strongReminderBody") ?: "")
+        )
+        intent.removeExtra("strongReminderId")
+        intent.removeExtra("strongReminderTitle")
+        intent.removeExtra("strongReminderBody")
+        return payload
     }
 }

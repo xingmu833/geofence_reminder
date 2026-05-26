@@ -18,7 +18,7 @@ class AlarmPlaybackService : Service() {
 
         startForeground(
             NativeNotificationHelper.ALARM_SERVICE_NOTIFICATION_ID,
-            NativeNotificationHelper.buildAlarmServiceNotification(this)
+            NativeNotificationHelper.buildAlarmServiceNotification(this, intent)
         )
         startSound(
             source = intent?.getStringExtra("source") ?: "builtIn",

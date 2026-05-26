@@ -38,8 +38,10 @@ dependencies:
   flutter_baidu_mapapi_map: 3.9.7
   flutter_baidu_mapapi_search: 3.9.7
   flutter_local_notifications: ^19.5.0
+  image_picker: ^1.1.2
   permission_handler: ^12.0.1
   shared_preferences: ^2.5.5
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +64,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/strong_reminder_character.jpg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

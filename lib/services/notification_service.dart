@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../models/reminder.dart';
 import '../models/strong_reminder_payload.dart';
@@ -15,7 +18,11 @@ class NotificationService {
 
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  static const MethodChannel _strongReminderLaunchChannel = MethodChannel(
+    'geofence_reminder/strong_reminder_launch',
+  );
   static bool _initialized = false;
+  static bool _timezoneInitialized = false;
   static Future<void>? _initializing;
 
   static Future<void> initialize() async {
@@ -36,6 +43,15 @@ class NotificationService {
   }
 
   static Future<void> _initialize() async {
+    _initializeTimezone();
+    _strongReminderLaunchChannel.setMethodCallHandler((call) async {
+      if (call.method == 'showStrongReminder') {
+        final payload = _payloadFromNativeMap(call.arguments);
+        if (payload != null) {
+          AppNavigationService.showStrongReminder(payload);
+        }
+      }
+    });
     const androidSettings = AndroidInitializationSettings('ic_stat_reminder');
     const settings = InitializationSettings(android: androidSettings);
     await _plugin.initialize(
@@ -53,6 +69,7 @@ class NotificationService {
     await android?.requestFullScreenIntentPermission();
     await _createAndroidChannels(android);
     await _handleLaunchFromNotification();
+    await _handleLaunchFromNativeStrongReminder();
 
     _initialized = true;
   }
@@ -152,15 +169,6 @@ class NotificationService {
       ongoing: isAlarm,
       autoCancel: !isAlarm,
       additionalFlags: isAlarm ? Int32List.fromList(const [4]) : null,
-      actions: isAlarm
-          ? const [
-              AndroidNotificationAction(
-                'dismiss',
-                '知道了',
-                cancelNotification: true,
-              ),
-            ]
-          : null,
     );
 
     await _plugin.show(
@@ -178,6 +186,63 @@ class NotificationService {
     if (isAlarm && _shouldOpenStrongReminderInForeground()) {
       AppNavigationService.showStrongReminder(
         StrongReminderPayload(id: id, title: title, body: body),
+      );
+    }
+  }
+
+  static Future<void> scheduleSnoozeStrongReminder({
+    required StrongReminderPayload payload,
+    required Duration delay,
+  }) async {
+    await initialize();
+    final settings = await (const AppSettingsStore()).load();
+    final id = _notificationId(payload.id + delay.inMinutes * 100000);
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'geofence_alarm_${settings.vibrationEnabled ? 'vibration' : 'silent'}_v5',
+        '强提醒',
+        icon: 'ic_stat_reminder',
+        channelDescription: '稍后再次强提醒',
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.alarm,
+        ticker: '强提醒',
+        playSound: true,
+        enableVibration: settings.vibrationEnabled,
+        fullScreenIntent: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        visibility: NotificationVisibility.public,
+        ongoing: true,
+        autoCancel: false,
+        additionalFlags: Int32List.fromList(const [4]),
+      ),
+    );
+    final scheduledAt = tz.TZDateTime.from(DateTime.now().add(delay), tz.local);
+    final encodedPayload = _encodeStrongReminderPayload(
+      id,
+      payload.title,
+      payload.body,
+    );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        payload.title,
+        payload.body,
+        scheduledAt,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: encodedPayload,
+      );
+    } catch (_) {
+      await _plugin.zonedSchedule(
+        id,
+        payload.title,
+        payload.body,
+        scheduledAt,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: encodedPayload,
       );
     }
   }
@@ -201,12 +266,33 @@ class NotificationService {
     }
   }
 
+  static void _initializeTimezone() {
+    if (_timezoneInitialized) {
+      return;
+    }
+    tz_data.initializeTimeZones();
+    _timezoneInitialized = true;
+  }
+
   static Future<void> _handleLaunchFromNotification() async {
     final details = await _plugin.getNotificationAppLaunchDetails();
     final response = details?.notificationResponse;
     if (details?.didNotificationLaunchApp == true && response != null) {
       _handleNotificationResponse(response);
     }
+  }
+
+  static Future<void> _handleLaunchFromNativeStrongReminder() async {
+    try {
+      final payload = _payloadFromNativeMap(
+        await _strongReminderLaunchChannel.invokeMethod<Object?>(
+          'consumeInitialStrongReminder',
+        ),
+      );
+      if (payload != null) {
+        AppNavigationService.showStrongReminder(payload);
+      }
+    } catch (_) {}
   }
 
   static void _handleNotificationResponse(NotificationResponse response) {
@@ -246,6 +332,20 @@ class NotificationService {
     } catch (_) {
       return null;
     }
+  }
+
+  static StrongReminderPayload? _payloadFromNativeMap(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    final id = raw['id'];
+    final title = raw['title'];
+    final body = raw['body'];
+    return StrongReminderPayload(
+      id: Reminder.normalizeId(id is int ? id : int.tryParse('$id') ?? 0),
+      title: title as String? ?? '强提醒',
+      body: body as String? ?? '',
+    );
   }
 }
 
