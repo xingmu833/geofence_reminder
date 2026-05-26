@@ -6,33 +6,23 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import com.google.android.gms.tasks.CancellationTokenSource
-import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 
 class NativeLocationScanService : Service() {
     private val scanIntervalMillis = 15_000L
+    private val fallbackScanIntervalMillis = 60_000L
     private val fastestIntervalMillis = 5_000L
     private val minDistanceMeters = 5f
 
     private val client by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private val handler = Handler(Looper.getMainLooper())
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            val location = result.lastLocation ?: return
-            NativeReminderTrigger.scanAt(
-                this@NativeLocationScanService,
-                location.latitude,
-                location.longitude
-            )
-        }
-    }
+    private var hasBaselineScan = false
     private val periodicScan = object : Runnable {
         override fun run() {
             scanCurrentLocation()
-            handler.postDelayed(this, scanIntervalMillis)
+            handler.postDelayed(this, fallbackScanIntervalMillis)
         }
     }
 
@@ -42,8 +32,8 @@ class NativeLocationScanService : Service() {
             NativeNotificationHelper.LOCATION_SERVICE_NOTIFICATION_ID,
             NativeNotificationHelper.buildLocationServiceNotification(this)
         )
-        requestLocationUpdates()
-        handler.post(periodicScan)
+        scanCurrentLocation()
+        handler.postDelayed(periodicScan, fallbackScanIntervalMillis)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,7 +47,6 @@ class NativeLocationScanService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(periodicScan)
-        client.removeLocationUpdates(locationCallback)
         client.removeLocationUpdates(NativeLocationUpdatePendingIntent.create(this))
         super.onDestroy()
     }
@@ -65,6 +54,10 @@ class NativeLocationScanService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun requestLocationUpdates() {
+        if (!hasBaselineScan) {
+            scanCurrentLocation()
+            return
+        }
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
             scanIntervalMillis
@@ -75,9 +68,7 @@ class NativeLocationScanService : Service() {
             .setWaitForAccurateLocation(true)
             .build()
         try {
-            client.removeLocationUpdates(locationCallback)
             client.removeLocationUpdates(NativeLocationUpdatePendingIntent.create(this))
-            client.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
             client.requestLocationUpdates(request, NativeLocationUpdatePendingIntent.create(this))
         } catch (_: SecurityException) {
             stopSelf()
@@ -90,7 +81,17 @@ class NativeLocationScanService : Service() {
             client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, token.token)
                 .addOnSuccessListener { location ->
                     if (location != null) {
-                        NativeReminderTrigger.scanAt(this, location.latitude, location.longitude)
+                        val shouldTrigger = hasBaselineScan
+                        NativeReminderTrigger.scanAt(
+                            this,
+                            location.latitude,
+                            location.longitude,
+                            triggerOnEntry = shouldTrigger
+                        )
+                        if (!shouldTrigger) {
+                            hasBaselineScan = true
+                            requestLocationUpdates()
+                        }
                     } else {
                         scanLastKnownLocation()
                     }
@@ -107,7 +108,17 @@ class NativeLocationScanService : Service() {
         try {
             client.lastLocation.addOnSuccessListener { location ->
                 if (location != null) {
-                    NativeReminderTrigger.scanAt(this, location.latitude, location.longitude)
+                    val shouldTrigger = hasBaselineScan
+                    NativeReminderTrigger.scanAt(
+                        this,
+                        location.latitude,
+                        location.longitude,
+                        triggerOnEntry = shouldTrigger
+                    )
+                    if (!shouldTrigger) {
+                        hasBaselineScan = true
+                        requestLocationUpdates()
+                    }
                 }
             }
         } catch (_: SecurityException) {

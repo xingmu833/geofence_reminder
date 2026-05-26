@@ -20,6 +20,11 @@ object NativeReminderTrigger {
         ) {
             return
         }
+        if (!reminders[index].entryArmed) {
+            reminders[index] = NativeReminderStore.markEntryArmed(reminders[index], true)
+            NativeReminderStore.save(context, reminders)
+            return
+        }
         triggerIndex(context, reminders, index)
     }
 
@@ -54,6 +59,11 @@ object NativeReminderTrigger {
                 reminder.longitude
             )
             val isInside = distance <= reminder.radiusMeters
+            if (!reminder.entryArmed) {
+                reminders[index] = NativeReminderStore.markEntryArmed(reminder, isInside)
+                changed = true
+                continue
+            }
             if (!isInside) {
                 val isClearlyOutside = distance > reminder.radiusMeters + exitHysteresisMeters
                 if (reminder.isInsideGeofence && isClearlyOutside) {

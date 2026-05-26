@@ -45,21 +45,24 @@ object NativeGeofenceManager {
             stopLocationScan(context)
             return
         }
-        startLocationScan(context)
 
         val request = GeofencingRequest.Builder()
             .setInitialTrigger(0)
             .addGeofences(geofences)
             .build()
         try {
+            markCurrentLocationAsBaseline(context)
             val pendingIntent = geofencePendingIntent(context)
             client.removeGeofences(pendingIntent).addOnCompleteListener {
                 try {
                     client.addGeofences(request, pendingIntent)
+                    startLocationScan(context)
                 } catch (_: SecurityException) {
+                    startLocationScan(context)
                 }
             }
         } catch (_: SecurityException) {
+            startLocationScan(context)
         }
     }
 
@@ -99,10 +102,12 @@ object NativeGeofenceManager {
 
     private fun mergeRuntimeState(previous: NativeReminder?, next: NativeReminder): NativeReminder {
         if (previous == null || !isSameFence(previous, next)) {
-            return next
+            next.json.put("entryArmed", false)
+            return NativeReminderStore.fromJson(next.json)
         }
 
         val merged = next.json
+        merged.put("entryArmed", previous.entryArmed)
         if (previous.triggerLimit == "once" && previous.lastTriggeredAt != null) {
             merged.put("isEnabled", false)
         }
@@ -170,6 +175,24 @@ object NativeGeofenceManager {
 
     private fun stopLocationScan(context: Context) {
         context.stopService(Intent(context, NativeLocationScanService::class.java))
+    }
+
+    private fun markCurrentLocationAsBaseline(context: Context) {
+        try {
+            LocationServices.getFusedLocationProviderClient(context)
+                .lastLocation
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        NativeReminderTrigger.scanAt(
+                            context,
+                            location.latitude,
+                            location.longitude,
+                            triggerOnEntry = false
+                        )
+                    }
+                }
+        } catch (_: SecurityException) {
+        }
     }
 
     private fun geofencePendingIntent(context: Context): PendingIntent {

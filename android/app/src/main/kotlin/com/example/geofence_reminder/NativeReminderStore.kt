@@ -24,7 +24,8 @@ data class NativeReminder(
     val lastTriggeredAt: Date?,
     val dailyTriggerDate: Date?,
     val dailyTriggeredCount: Int,
-    val isInsideGeofence: Boolean
+    val isInsideGeofence: Boolean,
+    val entryArmed: Boolean
 )
 
 object NativeReminderStore {
@@ -105,12 +106,19 @@ object NativeReminderStore {
             lastTriggeredAt = lastTriggeredAt,
             dailyTriggerDate = dailyTriggerDate ?: if (json.optString("triggerLimit") == "daily") lastTriggeredAt else null,
             dailyTriggeredCount = json.optInt("dailyTriggeredCount", if (dailyTriggerDate == null) 0 else 1),
-            isInsideGeofence = json.optBoolean("isInsideGeofence", false)
+            isInsideGeofence = json.optBoolean("isInsideGeofence", false),
+            entryArmed = json.optBoolean("entryArmed", false)
         )
     }
 
     fun markInside(reminder: NativeReminder, inside: Boolean): NativeReminder {
         reminder.json.put("isInsideGeofence", inside)
+        return fromJson(reminder.json)
+    }
+
+    fun markEntryArmed(reminder: NativeReminder, inside: Boolean): NativeReminder {
+        reminder.json.put("isInsideGeofence", inside)
+        reminder.json.put("entryArmed", true)
         return fromJson(reminder.json)
     }
 

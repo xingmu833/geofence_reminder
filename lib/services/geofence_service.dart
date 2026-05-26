@@ -31,6 +31,7 @@ class AppGeofenceService {
   static const Duration _scanTriggerCooldown = Duration(seconds: 30);
   static const NativeGeofenceBridge _native = NativeGeofenceBridge();
   static bool _isScanningLocation = false;
+  static String? _lastSyncedSignature;
 
   Future<void> initialize() async {
     await NotificationService.initialize();
@@ -38,7 +39,12 @@ class AppGeofenceService {
 
   Future<void> syncReminders(List<Reminder> reminders) async {
     await initialize();
+    final signature = _buildSyncSignature(reminders);
+    if (_lastSyncedSignature == signature) {
+      return;
+    }
     await _native.syncReminders(reminders);
+    _lastSyncedSignature = signature;
   }
 
   Future<void> triggerReminderById(int reminderId) async {
@@ -294,5 +300,40 @@ class AppGeofenceService {
 
   static bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static String _buildSyncSignature(List<Reminder> reminders) {
+    final sorted = [...reminders]..sort((a, b) => a.id.compareTo(b.id));
+    final buffer = StringBuffer();
+    for (final reminder in sorted) {
+      buffer
+        ..write(reminder.id)
+        ..write('|')
+        ..write(reminder.isEnabled)
+        ..write('|')
+        ..write(reminder.latitude.toStringAsFixed(6))
+        ..write('|')
+        ..write(reminder.longitude.toStringAsFixed(6))
+        ..write('|')
+        ..write(reminder.radiusMeters)
+        ..write('|')
+        ..write(reminder.triggerLimit.name)
+        ..write('|')
+        ..write(reminder.dailyTriggerLimit)
+        ..write('|')
+        ..write(reminder.scheduleLabel)
+        ..write('|')
+        ..write(reminder.alertMode.name)
+        ..write('|')
+        ..write(reminder.isInsideGeofence)
+        ..write('|')
+        ..write(reminder.lastTriggeredAt?.toIso8601String() ?? '')
+        ..write('|')
+        ..write(reminder.dailyTriggerDate?.toIso8601String() ?? '')
+        ..write('|')
+        ..write(reminder.dailyTriggeredCount)
+        ..write(';');
+    }
+    return buffer.toString();
   }
 }
